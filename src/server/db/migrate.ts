@@ -4,7 +4,7 @@ import { migrate as migratePg } from "drizzle-orm/node-postgres/migrator";
 import type { PgliteDatabase } from "drizzle-orm/pglite";
 import { migrate as migratePglite } from "drizzle-orm/pglite/migrator";
 import { Pool } from "pg";
-import { getDb } from "./index";
+import { getDb, strictSsl } from "./index";
 
 const migrationsFolder = path.join(process.cwd(), "drizzle");
 
@@ -16,7 +16,7 @@ const migrationsFolder = path.join(process.cwd(), "drizzle");
 export async function migrateDatabase(): Promise<void> {
   const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL;
   if (url) {
-    const pool = new Pool({ connectionString: url, max: 1 });
+    const pool = new Pool({ connectionString: strictSsl(url), max: 1 });
     try {
       await migratePg(drizzlePg({ client: pool }), { migrationsFolder });
     } finally {

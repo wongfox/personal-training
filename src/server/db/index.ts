@@ -17,6 +17,7 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
+import { attachDatabasePool } from "@vercel/functions";
 import { Pool } from "pg";
 import * as schema from "./schema";
 
@@ -32,7 +33,10 @@ const holder = ((globalThis as { __pgos_db?: Holder }).__pgos_db ??= {});
 function createDb(): DB {
   const url = process.env.DATABASE_URL;
   if (url) {
-    const pool = new Pool({ connectionString: url, max: Number(process.env.DATABASE_POOL_MAX ?? 5) });
+    const pool = new Pool({ connectionString: strictSsl(url), max: Number(process.env.DATABASE_POOL_MAX ?? 5) });
+    // On Vercel Fluid compute, lets idle pooled connections close before a function suspends
+    // (Neon's recommended setup for node-postgres on Vercel). A no-op elsewhere.
+    attachDatabasePool(pool);
     holder.close = () => pool.end();
     return drizzlePg({ client: pool, schema }) as unknown as DB;
   }
@@ -60,3 +64,18 @@ export async function closeDb(): Promise<void> {
 }
 
 export { schema };
+
+/**
+ * pg currently treats sslmode=require as full certificate verification and will
+ * weaken it to libpq semantics in v9. Pin the strict behaviour explicitly
+ * (Neon serves valid certificates), which also silences the deprecation warning.
+ */
+export function strictSsl(url: string): string {
+  try {
+    const u = new URL(url);
+    if (u.searchParams.get("sslmode") === "require") u.searchParams.set("sslmode", "verify-full");
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
