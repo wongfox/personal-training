@@ -1,7 +1,10 @@
 import { expect, type Page, test } from "@playwright/test";
 
 const SHOTS = "test-results/screens";
-const shot = (page: Page, name: string) => page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true });
+const shot = async (page: Page, name: string) => {
+  await page.waitForTimeout(700); // let entrance animations finish
+  await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true });
+};
 
 async function register(page: Page, email: string, name = "Juan") {
   await page.goto("/");
