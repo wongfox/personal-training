@@ -52,7 +52,7 @@ export async function postJSON<T>(url: string, body: unknown, opts: { queueOffli
       body: JSON.stringify(body),
       credentials: "same-origin",
     });
-  } catch (e) {
+  } catch {
     if (opts.queueOffline) {
       writeOutbox([...readOutbox(), { url, body, queuedAt: Date.now() }]);
       return { queued: true } as T;

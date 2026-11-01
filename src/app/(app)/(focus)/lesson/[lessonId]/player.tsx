@@ -56,7 +56,7 @@ export function LessonPlayer({ lesson }: { lesson: OpenLessonView }) {
   const [earned, setEarned] = useState(0);
   const [completion, setCompletion] = useState<CompletionResult | null>(null);
   const [completeError, setCompleteError] = useState<string | null>(null);
-  const lastStepAt = useRef(Date.now());
+  const lastStepAt = useRef<number | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
   const c = lesson.content;
   const current = STEPS[step];
@@ -64,8 +64,9 @@ export function LessonPlayer({ lesson }: { lesson: OpenLessonView }) {
   // Persist progress whenever the learner moves forward (queued if offline).
   useEffect(() => {
     if (lesson.completed && step < COMPLETE) return;
-    const seconds = Math.round((Date.now() - lastStepAt.current) / 1000);
-    lastStepAt.current = Date.now();
+    const now = Date.now();
+    const seconds = lastStepAt.current ? Math.round((now - lastStepAt.current) / 1000) : 0;
+    lastStepAt.current = now;
     void postJSON(`/api/lessons/${lesson.id}/progress`, { step, seconds }, { queueOffline: true }).catch(() => {});
     topRef.current?.scrollIntoView({ block: "start" });
   }, [step, lesson.id, lesson.completed]);

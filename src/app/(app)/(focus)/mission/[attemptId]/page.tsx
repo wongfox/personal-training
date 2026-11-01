@@ -12,11 +12,9 @@ export default async function MissionPage({ params }: PageProps<"/mission/[attem
   const { attemptId } = await params;
   const user = await requireUser();
   if (!/^[0-9a-f-]{36}$/i.test(attemptId)) notFound();
-  try {
-    const mission = await getMission(getDb(), user.id, attemptId);
-    return <MissionCheckIn mission={mission} />;
-  } catch (e) {
+  const mission = await getMission(getDb(), user.id, attemptId).catch((e: unknown) => {
     if (e instanceof NotFoundError) notFound();
     throw e;
-  }
+  });
+  return <MissionCheckIn mission={mission} />;
 }

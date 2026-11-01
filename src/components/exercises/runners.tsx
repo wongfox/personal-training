@@ -173,11 +173,10 @@ export function RecallRunner({ config, submitting, locked, onSubmit }: RunnerPro
 
   useEffect(() => {
     if (phase !== "study") return;
-    if (left <= 0) {
-      setPhase("recall");
-      return;
-    }
-    const t = window.setTimeout(() => setLeft((s) => s - 1), 1000);
+    const t = window.setTimeout(() => {
+      if (left <= 1) setPhase("recall");
+      else setLeft(left - 1);
+    }, 1000);
     return () => window.clearTimeout(t);
   }, [phase, left]);
 

@@ -6,6 +6,19 @@ import { Field, FormAlert } from "@/components/ui/field";
 import { cn } from "@/lib/cn";
 import { saveSettings, type SettingsInput } from "./actions";
 
+/** Applies the theme immediately and remembers it on this device (read before paint in the root layout). */
+function applyTheme(theme: SettingsInput["theme"]) {
+  const root = document.documentElement;
+  try {
+    if (theme === "system") localStorage.removeItem("pgos-theme");
+    else localStorage.setItem("pgos-theme", theme);
+  } catch {
+    /* storage unavailable */
+  }
+  if (theme === "system") root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", theme);
+}
+
 export function SettingsForm({ initial }: { initial: SettingsInput }) {
   const [v, setV] = useState(initial);
   const [status, setStatus] = useState<{ error?: string; ok?: boolean }>({});
@@ -14,20 +27,6 @@ export function SettingsForm({ initial }: { initial: SettingsInput }) {
     setV({ ...v, [k]: value });
     setStatus({});
   };
-
-  function applyTheme(theme: SettingsInput["theme"]) {
-    try {
-      if (theme === "system") {
-        localStorage.removeItem("pgos-theme");
-        delete document.documentElement.dataset.theme;
-      } else {
-        localStorage.setItem("pgos-theme", theme);
-        document.documentElement.dataset.theme = theme;
-      }
-    } catch {
-      /* storage unavailable */
-    }
-  }
 
   return (
     <div className="mt-7 space-y-8">

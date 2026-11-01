@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Personal Growth OS
 
-## Getting Started
+A daily training system for communication, confidence, leadership, thinking and networking.
+**Learn something. Practise it. Apply it. Reflect. Get better. Come back tomorrow.**
 
-First, run the development server:
+Mobile-first web app (installable PWA) built with Next.js 16, React 19, TypeScript, Tailwind CSS v4, Drizzle ORM and PostgreSQL (Neon in production, embedded PGlite locally).
+
+- Architecture, ERD, API, auth/RBAC strategy, risks and test plan: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- Database schema: [`src/server/db/schema.ts`](src/server/db/schema.ts) · migrations in [`drizzle/`](drizzle)
+
+## Quick start (no setup needed)
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run db:setup      # migrate + seed into ./.data/pglite (real Postgres in WASM)
+npm run dev           # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Register at `/register`. To get the admin panel, either add your email to `SUPER_ADMIN_EMAILS` in `.env.local` **before** registering, or run `npm run admin:grant -- you@example.com SUPER_ADMIN` (stop the dev server first when using PGlite).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Production (Neon)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Create a Neon project and copy both connection strings into the environment:
+   `DATABASE_URL` (pooled, `-pooler` host) and `DATABASE_URL_UNPOOLED` (direct).
+2. `npm run db:setup` — applies migrations over the direct connection and seeds content (idempotent; never overwrites CMS edits unless run with `-- --force`).
+3. Set `APP_URL`, `SUPER_ADMIN_EMAILS`, and optionally `ANTHROPIC_API_KEY`, `GOOGLE_CLIENT_ID/SECRET`, `RESEND_API_KEY`, `CRON_SECRET` (see [`.env.example`](.env.example)).
+4. `npm run build && npm start`, and schedule `GET /api/cron/notifications` (e.g. every 15 min) with `Authorization: Bearer $CRON_SECRET`.
 
-## Learn More
+Secrets are only read on the server; nothing sensitive is exposed to the browser.
 
-To learn more about Next.js, take a look at the following resources:
+## Optional integrations
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Variable | Without it | With it |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Coach answers from the content library ("playbook mode"); simulators follow a script; feedback comes from the rules engine | Claude coach that knows the learner's plan, progress and missions (streaming); simulators improvise in character; AI-written feedback on conversations and presentations |
+| `GOOGLE_CLIENT_ID/SECRET` | Google button hidden | Sign in with Google (PKCE) |
+| `RESEND_API_KEY` | Emails (password reset, reminders) are printed to the server log | Real email delivery |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Scripts
 
-## Deploy on Vercel
+| Command | What it does |
+|---|---|
+| `npm run dev` / `build` / `start` | Next.js |
+| `npm test` | Unit + integration tests (Vitest, in-memory Postgres) |
+| `npm run test:e2e` | Playwright end-to-end suite at 390×844 (`E2E_PROD=1` to run against the production build) |
+| `npm run typecheck` · `npm run lint` | Static checks |
+| `npm run db:generate` | New migration from schema changes |
+| `npm run db:migrate` · `db:seed` · `db:setup` | Database |
+| `npm run admin:grant -- <email> <ROLE>` | Grant SUPER_ADMIN, ADMIN, CONTENT_MANAGER or COACH |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Content
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+45 original lessons across 5 journeys (Communication Mastery, Confident Presence, Lead the Room, Sharper Thinking, Connect with Anyone), 22 practice tools and 24 library resources, all editable in the admin CMS. Expert insights paraphrase established work with attribution; there are no invented quotes or statistics.

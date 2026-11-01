@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FormAlert } from "@/components/ui/field";
 import { postJSON } from "@/lib/api-client";
 import type { ExerciseFeedback } from "@/server/db/types";
@@ -31,7 +31,10 @@ export function ExerciseRunner({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [attemptKey, setAttemptKey] = useState(0);
-  const startedAt = useRef(Date.now());
+  const startedAt = useRef<number | null>(null);
+  useEffect(() => {
+    startedAt.current = Date.now();
+  }, []);
 
   async function submit(response: unknown) {
     setSubmitting(true);
@@ -39,7 +42,7 @@ export function ExerciseRunner({
     try {
       const outcome = await postJSON<ExerciseOutcome>(`/api/exercises/${exerciseId}/attempts`, {
         response,
-        durationSeconds: Math.round((Date.now() - startedAt.current) / 1000),
+        durationSeconds: startedAt.current ? Math.round((Date.now() - startedAt.current) / 1000) : null,
       });
       setResult(outcome);
       onComplete?.(outcome);

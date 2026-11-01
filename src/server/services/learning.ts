@@ -23,7 +23,7 @@ import {
   reviewItems,
   userJourneys,
 } from "@/server/db/schema";
-import type { ActionReflectionAnswers, ExerciseConfig, ExerciseFeedback } from "@/server/db/types";
+import type { ActionReflectionAnswers, ExerciseFeedback } from "@/server/db/types";
 import { resolveOrderKeys, toClientConfig } from "@/server/engine/client-config";
 import { InvalidResponseError, scoreExercise } from "@/server/engine/exercise-scoring";
 import { initialReview, scheduleReview, SKILL_GAINS, XP } from "@/server/engine/progression";
