@@ -128,7 +128,7 @@ erDiagram
 ```
 
 Tablas adicionales a las del brief, y por qué:
-`oauth_accounts`, `password_reset_tokens`, `rate_limits` (seguridad), `growth_plans` (el plan personalizado es una entidad versionable), `user_journeys` (múltiples programas por usuario), `review_items` (motor de repaso espaciado), `weekly_reviews`, `analytics_events`.
+`oauth_accounts`, `password_reset_tokens`, `email_verification_tokens`, `rate_limits` (seguridad), `quiz_answer_checks` (la primera respuesta comprobada es la que puntúa), `growth_plans` (el plan personalizado es una entidad versionable), `user_journeys` (múltiples programas por usuario), `review_items` (motor de repaso espaciado), `weekly_reviews`, `analytics_events`.
 
 ## 4. Schema PostgreSQL
 
@@ -175,7 +175,8 @@ public/sw.js           service worker
 1. **Alta:** Landing → Register (o Google) → Onboarding (≈15 pantallas de un toque, 2–3 min) → *Plan reveal* → Home.
 2. **Día de entrenamiento:** Home → *Start today's training* → Hook → Why it matters → Core concept → Expert insight → Example → Ejercicio interactivo (feedback inmediato) → Misión real (“I'll do it today”) → Reflexión → Knowledge check (corrección por pregunta) → Completion (XP, streak, skill, logros, mañana) → Home (“done” + misión viva).
 3. **Aplicar y reflexionar:** Home → *I did it — check in* → Did you do it? (Yes / Not yet) → 😞😐🙂🔥 → 4 preguntas de reflexión → *Mission logged*. Si es de un día anterior aparece arriba: “Did you do it?”.
-4. **Volver mañana:** la siguiente lección se desbloquea a medianoche **en la zona horaria del alumno**; los conceptos del quiz reaparecen a 1/3/7/14/30 días en *Review*.
+4. **Volver mañana:** la siguiente lección se desbloquea a medianoche **en la zona horaria del alumno** (una lección al día en todo el plan, no por journey); los conceptos del quiz reaparecen a 1/3/7/14/30 días en *Review*.
+5. **Plan de 90 días:** el plan es un *roadmap* de journeys (objetivo principal → secundarios → resto) mostrado como línea temporal por semanas al ritmo elegido; al terminar una journey se inscribe automáticamente la siguiente.
 5. **Practicar:** Practice → herramienta (simulador de conversación/networking, presentation trainer, organizador de ideas, story builder, decisión, memoria, hedge hunter) → feedback por dimensiones.
 6. **Coach:** Home “Ask your coach” → chat con contexto personal (plan, habilidades, misiones, reflexiones).
 7. **Revisiones:** semanal (cada 7 días: estadísticas + “What changed this week?” + foco siguiente) y checkpoints día 30/60/90 (*Before → Now*).
@@ -207,7 +208,9 @@ Formularios (auth, onboarding, ajustes, revisiones, CMS) usan Server Actions con
 
 - **Email/contraseña:** scrypt (N=2¹⁵, r=8, p=1, sal de 16 B), comparación en tiempo constante, hash ficticio para no filtrar qué emails existen. Política NIST: ≥10 caracteres, sin reglas de composición.
 - **Sesiones:** token aleatorio de 256 bits en cookie `__Host-pgos_session` (HttpOnly, Secure, SameSite=Lax, Path=/). En BD solo se guarda `sha256(token)`; 30 días con renovación deslizante; se invalidan al suspender la cuenta o resetear la contraseña.
-- **Google:** OAuth 2.0 con PKCE y `state` en cookies de 10 min; solo se enlaza a una cuenta existente si Google afirma `email_verified` (evita *account takeover*).
+- **Verificación de email:** al registrarse se envía un enlace de un solo uso (72 h). `SUPER_ADMIN_EMAILS` solo concede el rol cuando la dirección está verificada (enlace o Google), así nadie puede “reclamar” la cuenta de admin registrándose primero; el bootstrap operativo es `npm run admin:create`.
+- **Google:** OAuth 2.0 con PKCE y `state` en cookies de 10 min; solo se enlaza a una cuenta existente si Google afirma `email_verified`. Si esa cuenta tenía contraseña pero nunca verificó su email, la contraseña se anula y sus sesiones se cierran (el dueño real del buzón prevalece).
+- **Cuenta:** cambio de contraseña (cierra las demás sesiones) y borrado de cuenta con confirmación (en cascada; nunca deja el sistema sin super admin). La zona horaria solo puede cambiarse una vez por semana (cuenta los días de entrenamiento).
 - **Recuperación:** token de un solo uso (hash en BD), 1 h de validez, respuesta idéntica exista o no la cuenta, rate-limit por IP y por email; al usarlo se queman todos los tokens pendientes y se cierran todas las sesiones.
 - **Protección de rutas:** `proxy.ts` hace un *gate* optimista por cookie; la autorización real ocurre en la capa de acceso a datos (`requireUser`, `requirePermission`) en cada request.
 - **Clientes nativos:** el mismo token vale como `Bearer`; las peticiones Bearer no son vulnerables a CSRF y el token explícito prevalece sobre la cookie.
@@ -227,6 +230,7 @@ Roles en BD (`roles`, `user_roles`); permisos en código ([`src/server/auth/rbac
 | content:publish (publicar/archivar) | ✓ | ✓ | | | |
 | audit:read | ✓ | ✓ | | | |
 
+Flujo editorial: un CONTENT_MANAGER crea y edita borradores y los envía a *Review*; **no puede modificar nada publicado o archivado** (ni texto, ni claves de respuesta, ni estado) — eso es decisión de un ADMIN.
 Reglas extra: nadie cambia sus propios roles ni se suspende a sí mismo; un ADMIN no puede tocar cuentas con roles superiores; siempre queda al menos un SUPER_ADMIN activo; los alumnos (USER) solo acceden a sus propios datos — **todas** las consultas del alumno filtran por `user_id` de la sesión (verificado en tests de integración). Las rutas de admin responden 404 a quien no tiene permiso (no revelan su existencia). Bootstrap: `SUPER_ADMIN_EMAILS` o `npm run admin:grant -- email ROLE`.
 
 ## 10. MVP roadmap (fases ejecutadas)

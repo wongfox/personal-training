@@ -16,7 +16,10 @@ npm run db:setup      # migrate + seed into ./.data/pglite (real Postgres in WAS
 npm run dev           # http://localhost:3000
 ```
 
-Register at `/register`. To get the admin panel, either add your email to `SUPER_ADMIN_EMAILS` in `.env.local` **before** registering, or run `npm run admin:grant -- you@example.com SUPER_ADMIN` (stop the dev server first when using PGlite).
+Register at `/register`. For the admin panel, create a verified super admin with
+`npm run admin:create -- you@example.com "a long password" "Your Name"` (stop the dev server first when using PGlite),
+or grant a role to an existing account with `npm run admin:grant -- you@example.com ADMIN`.
+`SUPER_ADMIN_EMAILS` also works, but only once that address is **verified** (email link or Google), so nobody can claim admin by registering the address first.
 
 ## Production (Neon)
 
@@ -47,6 +50,7 @@ Secrets are only read on the server; nothing sensitive is exposed to the browser
 | `npm run db:generate` | New migration from schema changes |
 | `npm run db:migrate` · `db:seed` · `db:setup` | Database |
 | `npm run admin:grant -- <email> <ROLE>` | Grant SUPER_ADMIN, ADMIN, CONTENT_MANAGER or COACH |
+| `npm run admin:create -- <email> <password> [name]` | Create a verified SUPER_ADMIN account (bootstrap) |
 
 ## Content
 
