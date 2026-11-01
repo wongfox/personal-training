@@ -60,6 +60,7 @@ export function LessonPlayer({ lesson }: { lesson: OpenLessonView }) {
   const topRef = useRef<HTMLDivElement>(null);
   const c = lesson.content;
   const current = STEPS[step];
+  const reflectionWords = reflection.trim() ? reflection.trim().split(/\s+/).length : 0;
 
   // Persist progress whenever the learner moves forward (queued if offline).
   useEffect(() => {
@@ -100,7 +101,7 @@ export function LessonPlayer({ lesson }: { lesson: OpenLessonView }) {
       <div className="space-y-2">
         {completeError && <FormAlert>{completeError}</FormAlert>}
         <Button onClick={next} disabled={!canContinue}>
-          {step === CHECK ? "Finish lesson" : step === 6 ? "I'll do it today" : step === 7 && !reflection.trim() ? "Skip for now" : "Continue"}
+          {step === CHECK ? "Finish lesson" : step === 6 ? "I'll do it today" : step === 7 && reflectionWords < 4 ? "Skip for now" : "Continue"}
           <ArrowRight size={18} />
         </Button>
         {step > 0 && (
@@ -263,6 +264,13 @@ export function LessonPlayer({ lesson }: { lesson: OpenLessonView }) {
               className="mt-6 min-h-36 w-full resize-none rounded-2xl border border-line bg-surface p-4 text-[16px] leading-relaxed outline-none focus:border-ink/40"
               aria-label={c.reflectionPrompt}
             />
+            <p className="mt-2 text-[13px] text-muted">
+              {reflectionWords === 0
+                ? "Optional — but writing it down is what makes it stick."
+                : reflectionWords < 4
+                  ? "Add a little more to save it as a reflection (+20 XP)."
+                  : "Saved with your lesson when you continue."}
+            </p>
           </section>
         )}
 
@@ -333,13 +341,23 @@ function QuizRunner({
     setBusy(true);
     try {
       const res = await postJSON<{ score: number; total: number; reward: { xp: number } }>(`/api/quizzes/${quizId}/attempts`, { answers: all }, { queueOffline: true });
-      setFinal(res.score !== undefined ? res : { score: all.length, total: questions.length });
+      // Queued offline: there's no score yet — never show a made-up one.
+      setFinal(res.score !== undefined ? res : { score: -1, total: questions.length });
       onDone(res.reward?.xp ?? 0);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't save your answers.");
     } finally {
       setBusy(false);
     }
+  }
+
+  if (final && final.score < 0) {
+    return (
+      <div className="mt-6 rounded-3xl bg-surface p-6 text-center shadow-card">
+        <p className="font-display text-[28px] leading-tight">Answers saved offline.</p>
+        <p className="mt-3 text-[15px] text-ink-2">Your score appears as soon as you&apos;re back online.</p>
+      </div>
+    );
   }
 
   if (final) {

@@ -34,7 +34,7 @@ export function WeekStrip({ monday, days, today }: { monday: ISODate; days: ISOD
             <span
               className={cn(
                 "grid h-8 w-8 place-items-center rounded-full border text-[11px] transition",
-                done ? "border-accent bg-accent text-accent-ink" : isToday ? "border-ink" : "border-line",
+                done ? "border-accent bg-accent text-accent-ink" : isToday ? "border-2 border-ink" : "border-muted/40",
                 d > today && "opacity-50",
               )}
               aria-label={`${d}${done ? ", trained" : ""}`}

@@ -158,7 +158,7 @@ export function buildCoachInsight(s: InsightSignals): CoachInsight {
     tone: "praise",
     focus: improving?.name ?? s.primarySkill.name,
     observation: improvingClause
-      ? `${improvingClause}${wins > 0 ? `, and your missions are landing — ${wins} recent wins` : ""}. ${s.streak >= 3 ? `${s.streak} days in a row.` : ""}`.trim()
+      ? `${improvingClause}${wins > 0 ? `, and your missions are landing — ${wins} recent ${wins === 1 ? "win" : "wins"}` : ""}. ${s.streak >= 3 ? `${s.streak} days in a row.` : ""}`.trim()
       : `Steady work: ${s.lessonsCompleted} lessons done and a ${s.streak}-day streak.`,
     recommendation: s.next ? `Raise the difficulty a notch. Next up: “${s.next.title}”.` : "Try a harder practice scenario this week to stretch the skill.",
   };

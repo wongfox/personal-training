@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { StreakBadge, WeekStrip } from "@/components/progress-widgets";
+import { ContinueJourneyButton } from "./continue-journey";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, Pill, ProgressBar, SectionTitle } from "@/components/ui/primitives";
 import { formatDay, greeting, localDate } from "@/lib/dates";
@@ -34,6 +35,9 @@ export default async function HomePage() {
           <h1 className="mt-1 font-display text-[32px] leading-[1.05]">
             {greeting(user.timezone)}, {firstName}
           </h1>
+          {data.streak.atRisk && data.streak.current > 0 && (
+            <p className="mt-1.5 text-[13px] font-medium text-accent">Train today to keep your {data.streak.current}-day streak.</p>
+          )}
         </div>
         <Link href="/profile" aria-label="Your streak and progress">
           <StreakBadge days={data.streak.current} atRisk={data.streak.atRisk} />
@@ -109,11 +113,24 @@ export default async function HomePage() {
             <p className="mt-2 text-[14px] text-hero-ink/70">
               {data.masteryRep.title.split(":")[0]} · {data.masteryRep.estimatedMinutes} min
             </p>
-            <ButtonLink href={`/practice/${data.masteryRep.slug}`} variant="accent" className="mt-6">
-              Start today&apos;s rep
-              <ArrowRight size={18} />
-            </ButtonLink>
+            {data.masteryRep.done ? (
+              <p className="mt-6 flex items-center gap-2 text-[15px] font-medium">
+                <Check size={18} strokeWidth={2.6} /> Done for today — come back tomorrow.
+              </p>
+            ) : (
+              <ButtonLink href={`/practice/${data.masteryRep.slug}`} variant="accent" className="mt-6">
+                Start today&apos;s rep
+                <ArrowRight size={18} />
+              </ButtonLink>
+            )}
           </div>
+        ) : data.continueJourney ? (
+          <Card className="p-6">
+            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-muted">Next in your plan</p>
+            <p className="mt-2 font-display text-[28px] leading-tight">{data.continueJourney.title}</p>
+            <p className="mt-2 text-[15px] text-ink-2">You&apos;ve finished this journey. Pick up the next one in your roadmap.</p>
+            <ContinueJourneyButton journeyId={data.continueJourney.id} />
+          </Card>
         ) : data.journeyComplete ? (
           <Card className="p-6">
             <p className="font-display text-[26px]">Journey complete.</p>

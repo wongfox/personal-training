@@ -135,7 +135,7 @@ export async function getRoadmapView(
  */
 export async function masteryRepFor(db: Executor, primarySkillKey: string, dayNumber: number) {
   const tools = await db
-    .select({ slug: exercises.slug, title: exercises.title, category: exercises.category, estimatedMinutes: exercises.estimatedMinutes })
+    .select({ id: exercises.id, slug: exercises.slug, title: exercises.title, category: exercises.category, estimatedMinutes: exercises.estimatedMinutes })
     .from(exercises)
     .where(and(eq(exercises.isPractice, true), eq(exercises.status, "published")))
     .orderBy(asc(exercises.order));

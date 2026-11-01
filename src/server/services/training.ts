@@ -1,12 +1,13 @@
 /**
  * Read models for the learner's plan, journey and today's training.
  */
-import { and, asc, desc, eq, gt, inArray, isNotNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, lte, ne, sql } from "drizzle-orm";
 import { addDays, diffDays, type ISODate, localDate, startOfWeek } from "@/lib/dates";
 import type { Executor } from "@/server/db";
 import {
   dailyActionAttempts,
   dailyActions,
+  exerciseAttempts,
   goals,
   growthPlans,
   journeyModules,
@@ -85,9 +86,6 @@ export interface OutlineModule {
   completed: number;
 }
 
-/** Minimum rest between two lessons, whatever the calendar says. */
-export const MIN_GAP_HOURS = 8;
-
 export async function getJourneyOutline(db: Executor, userId: string, journeyId: string, today: ISODate) {
   const [journey] = await db.select().from(journeys).where(eq(journeys.id, journeyId));
   if (!journey) return null;
@@ -125,8 +123,8 @@ export async function getJourneyOutline(db: Executor, userId: string, journeyId:
         .where(and(eq(lessonProgress.userId, userId), inArray(lessonProgress.lessonId, ids)))
     : [];
   const progress = new Map<string, LessonProgressRef>(progressRows.map((p) => [p.lessonId, p]));
-  // Today's lesson is already "used" if one was finished today in another journey, or less
-  // than MIN_GAP hours ago (a timezone change or late-night finish can't unlock two in a row).
+  // Today's lesson is already "used" if one was finished today in another journey
+  // (e.g. the journey just completed) — one lesson per day across the whole plan.
   const [elsewhere] = await db
     .select({
       completedOn: lessonProgress.completedOn,
@@ -145,10 +143,8 @@ export async function getJourneyOutline(db: Executor, userId: string, journeyId:
       and(
         eq(lessonProgress.userId, userId),
         eq(lessonProgress.status, "completed"),
-        or(
-          and(eq(lessonProgress.completedOn, today), ne(journeyModules.journeyId, journeyId)),
-          and(gt(lessonProgress.completedAt, new Date(Date.now() - MIN_GAP_HOURS * 3600_000)), ne(lessonProgress.completedOn, today)),
-        ),
+        eq(lessonProgress.completedOn, today),
+        ne(journeyModules.journeyId, journeyId),
       ),
     )
     .limit(1);
@@ -301,7 +297,14 @@ export async function replayDay(db: Executor, userId: string, timezone: string, 
     .leftJoin(growthPlans, and(eq(growthPlans.userId, users.id), eq(growthPlans.status, "active")))
     .where(eq(users.id, userId))
     .limit(1);
-  const floors = [addDays(today, -1), row?.lastActive, row?.planStart, row ? localDate(timezone, row.createdAt) : null].filter(Boolean) as ISODate[];
+  const floors = [addDays(today, -1), row?.planStart, row ? localDate(timezone, row.createdAt) : null].filter(Boolean) as ISODate[];
   const floor = floors.reduce((a, b) => (a > b ? a : b));
-  return claimed < floor ? floor : claimed;
+  if (claimed < floor) return today;
+  // The client's clock is only a hint: the claimed day is accepted only if the server itself
+  // saw this learner working on it (exercise attempts can only be made online).
+  const recent = await db
+    .select({ createdAt: exerciseAttempts.createdAt })
+    .from(exerciseAttempts)
+    .where(and(eq(exerciseAttempts.userId, userId), gte(exerciseAttempts.createdAt, new Date(now.getTime() - 48 * 3600_000))));
+  return recent.some((r) => localDate(timezone, r.createdAt) === claimed) ? claimed : today;
 }

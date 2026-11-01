@@ -65,7 +65,7 @@ async function sendVerificationEmail(userId: string, email: string, name: string
   await sendEmail({
     to: email,
     subject: "Confirm your email for Personal Growth OS",
-    text: `Hi ${name},\n\nConfirm this is your address (the link is valid for 3 days):\n${appUrl(`/api/auth/verify-email?token=${encodeURIComponent(token)}`)}\n\nIf you didn't create an account, ignore this email.`,
+    text: `Hi ${name},\n\nConfirm this is your address (the link is valid for 3 days):\n${appUrl(`/verify-email?token=${encodeURIComponent(token)}`)}\n\nIf you didn't create an account, ignore this email.`,
   });
 }
 

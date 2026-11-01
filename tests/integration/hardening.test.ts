@@ -6,7 +6,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { addDays } from "@/lib/dates";
 import { scripted } from "@/server/ai/simulator";
 import type { DB } from "@/server/db";
-import { exercises, growthPlans, lessonProgress, quizQuestions, quizzes, streaks, xpTransactions } from "@/server/db/schema";
+import { exerciseAttempts, exercises, growthPlans, lessonProgress, quizQuestions, quizzes, streaks, users, xpTransactions } from "@/server/db/schema";
+import { recordActivity } from "@/server/services/rewards";
 import type { ExerciseConfig, RoleplayConfig } from "@/server/db/types";
 import { scoreExercise } from "@/server/engine/exercise-scoring";
 import { ForbiddenError, ValidationError } from "@/server/errors";
@@ -101,9 +102,6 @@ describe("referee round 2 regressions", () => {
     expect(today.doneLesson?.id).toBe(last.id);
     const first = today.nextLesson!;
     expect((await getLessonForUser(db, userId, first.id, DAY1))?.locked).toBe(true);
-    // Next calendar day but only minutes later (e.g. a timezone jump): still locked.
-    expect((await getHomeData(db, userId, addDays(DAY1, 1)))!.todayLesson).toBeNull();
-    await db.update(lessonProgress).set({ completedAt: new Date(Date.now() - 9 * 3600_000) }).where(eq(lessonProgress.userId, userId));
     const tomorrow = (await getHomeData(db, userId, addDays(DAY1, 1)))!;
     expect(tomorrow.todayLesson?.id).toBe(first.id);
   });
@@ -187,5 +185,66 @@ describe("referee round 3 regressions", () => {
     const evasive = await submitExercise(db, userId, DAY1, tool.id, { turns: [{ role: "counterpart", text: "Hi" }, { role: "user", text: "ok" }] }, 5);
     expect(evasive.reward.streak.current).toBe(0);
     expect(reflectionFeedback({ outcome: "good", answers: { whatWorked: "ok" }, next: null }).observation).not.toContain("“ok”");
+  });
+});
+
+describe("referee round 4 regressions", () => {
+  let db: DB;
+  beforeAll(async () => {
+    db = await setupDatabase();
+  });
+
+  it("the streak is derived from training days, whatever order they arrive in", async () => {
+    const { userId } = await createLearner(DAY1);
+    const day = (n: number) => addDays(DAY1, n);
+    const train = (d: string, key: string) =>
+      db.transaction((tx) => recordActivity(tx, userId, d, { reason: "practice_completed", amount: 10, key, countsAsTraining: true }));
+    await train(day(0), "a");
+    await train(day(2), "c"); // a gap: streak restarts at 1
+    expect((await db.select().from(streaks).where(eq(streaks.userId, userId)))[0]).toMatchObject({ current: 1, longest: 1 });
+    // Another device syncs day 1 late: it fills the gap instead of resetting anything.
+    const late = await train(day(1), "b");
+    expect(late.streak.event).toBe("past");
+    expect((await db.select().from(streaks).where(eq(streaks.userId, userId)))[0]).toMatchObject({ current: 3, longest: 3, lastActiveDate: day(2) });
+  });
+
+  it("achievement bonuses never count as a training day", async () => {
+    const { userId } = await createLearner(DAY1);
+    await finishLesson(db, userId, DAY1, (await getHomeData(db, userId, DAY1))!.todayLesson!.id);
+    const bonus = await db.select().from(xpTransactions).where(and(eq(xpTransactions.userId, userId), eq(xpTransactions.reason, "achievement_earned")));
+    expect(bonus.length).toBeGreaterThan(0);
+    expect(bonus.every((b) => b.countsAsTraining === false)).toBe(true);
+  });
+
+  it("a good retry turns a token practice rep into a training day", async () => {
+    const { userId } = await createLearner(DAY1);
+    const [tool] = await db.select().from(exercises).where(and(eq(exercises.isPractice, true), eq(exercises.type, "roleplay")));
+    const weak = await submitExercise(db, userId, DAY1, tool.id, { turns: [{ role: "counterpart", text: "Hi" }, { role: "user", text: "no" }] }, 5);
+    expect(weak.reward.streak.current).toBe(0);
+    const good = await submitExercise(db, userId, DAY1, tool.id, {
+      turns: [
+        { role: "counterpart", text: "Hi, nice to meet you. What do you do?" },
+        { role: "user", text: "I run operations for a rail company in Cusco. What brought you to the event tonight?" },
+        { role: "counterpart", text: "We're looking at logistics partners." },
+        { role: "user", text: "That sounds interesting — what's the hardest part of choosing one? Could we swap emails and talk next week?" },
+      ],
+    }, 60);
+    expect(good.feedback.score).toBeGreaterThanOrEqual(40);
+    expect(good.reward.xp).toBe(0); // XP stays capped per tool per day…
+    expect(good.reward.streak.current).toBe(1); // …but the day now counts.
+  });
+
+  it("a replayed 'yesterday' needs server evidence from yesterday", async () => {
+    const { userId } = await createLearner(addDays(localDate("UTC"), -5));
+    await db.update(users).set({ createdAt: new Date(Date.now() - 5 * 86_400_000) }).where(eq(users.id, userId));
+    const tz = "UTC";
+    const now = new Date();
+    const yesterday = new Date(now.getTime() - 24 * 3600_000);
+    // No server-side activity yesterday: a forged claim is counted as today.
+    expect(await replayDay(db, userId, tz, yesterday, now)).toBe(localDate(tz, now));
+    // An exercise attempt the server recorded yesterday is evidence the learner was training then.
+    const [ex] = await db.select().from(exercises).where(eq(exercises.isPractice, true)).limit(1);
+    await db.insert(exerciseAttempts).values({ userId, exerciseId: ex.id, response: {}, score: 80, feedback: { score: 80, summary: "", strengths: [], improvements: [], source: "rules" }, createdAt: yesterday });
+    expect(await replayDay(db, userId, tz, yesterday, now)).toBe(localDate(tz, yesterday));
   });
 });

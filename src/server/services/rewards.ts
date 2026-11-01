@@ -3,8 +3,8 @@
  * XP (idempotent), level, training-day streak, skill score and achievements.
  * Always called inside the same transaction as the activity it rewards.
  */
-import { and, eq, sql } from "drizzle-orm";
-import type { ISODate } from "@/lib/dates";
+import { and, desc, eq, sql } from "drizzle-orm";
+import { diffDays, type ISODate } from "@/lib/dates";
 import type { Executor } from "@/server/db";
 import {
   achievements,
@@ -88,6 +88,39 @@ async function addXp(db: Executor, userId: string, amount: number): Promise<numb
   return row?.totalXp ?? 0;
 }
 
+/**
+ * The streak is derived from the set of distinct training days, never from the
+ * order activities arrive in — so a late sync from another device can only
+ * fill a real day in, never rewind or reset it.
+ */
+export async function syncStreak(db: Executor, userId: string, previousLongest = 0) {
+  const rows = await db
+    .selectDistinct({ day: xpTransactions.activityDate })
+    .from(xpTransactions)
+    .where(and(eq(xpTransactions.userId, userId), eq(xpTransactions.countsAsTraining, true)))
+    .orderBy(desc(xpTransactions.activityDate))
+    .limit(400);
+  const days = rows.map((r) => r.day);
+  let current = 0;
+  let longest = previousLongest;
+  let run = 0;
+  let inLatestRun = true;
+  for (let i = 0; i < days.length; i++) {
+    // days are newest first: the next (older) day is consecutive when it is exactly one day earlier
+    const contiguous = i > 0 && diffDays(days[i], days[i - 1]) === 1;
+    if (i > 0 && !contiguous) inLatestRun = false;
+    run = contiguous ? run + 1 : 1;
+    if (inLatestRun) current = run;
+    longest = Math.max(longest, run);
+  }
+  const lastActiveDate = days[0] ?? null;
+  await db
+    .insert(streaks)
+    .values({ userId, current, longest, lastActiveDate })
+    .onConflictDoUpdate({ target: streaks.userId, set: { current, longest, lastActiveDate } });
+  return { current, longest, lastActiveDate };
+}
+
 export async function recordActivity(
   db: Executor,
   userId: string,
@@ -121,6 +154,19 @@ export async function recordActivity(
     achievements: [],
   };
   if (!result.awarded) {
+    if (training) {
+      const upgraded = await db
+        .update(xpTransactions)
+        .set({ countsAsTraining: true })
+        .where(and(eq(xpTransactions.userId, userId), eq(xpTransactions.idempotencyKey, input.key), eq(xpTransactions.countsAsTraining, false)))
+        .returning({ id: xpTransactions.id });
+      if (upgraded.length) {
+        const prev = { current: streakRow?.current ?? 0, longest: streakRow?.longest ?? 0, lastActiveDate: streakRow?.lastActiveDate ?? null };
+        const { event, lost } = applyTrainingDay(prev, today);
+        const fresh = await syncStreak(db, userId, prev.longest);
+        result.streak = { current: fresh.current, longest: fresh.longest, event, lost };
+      }
+    }
     const [p] = await db.select({ totalXp: profiles.totalXp }).from(profiles).where(eq(profiles.userId, userId));
     result.totalXp = p?.totalXp ?? 0;
     return result;
@@ -133,20 +179,10 @@ export async function recordActivity(
 
   // Training-day streak
   if (training) {
-    const next = applyTrainingDay(
-      { current: streakRow?.current ?? 0, longest: streakRow?.longest ?? 0, lastActiveDate: streakRow?.lastActiveDate ?? null },
-      today,
-    );
-    if (next.event !== "same_day" && next.event !== "past") {
-      await db
-        .insert(streaks)
-        .values({ userId, current: next.current, longest: next.longest, lastActiveDate: next.lastActiveDate })
-        .onConflictDoUpdate({
-          target: streaks.userId,
-          set: { current: next.current, longest: next.longest, lastActiveDate: next.lastActiveDate },
-        });
-    }
-    result.streak = { current: next.current, longest: next.longest, event: next.event, lost: next.lost };
+    const prev = { current: streakRow?.current ?? 0, longest: streakRow?.longest ?? 0, lastActiveDate: streakRow?.lastActiveDate ?? null };
+    const { event, lost } = applyTrainingDay(prev, today);
+    const fresh = await syncStreak(db, userId, prev.longest);
+    result.streak = { current: fresh.current, longest: fresh.longest, event, lost };
   }
 
   // Skill score
@@ -210,6 +246,7 @@ export async function recordActivity(
           sourceId: ach.id,
           idempotencyKey: `achievement:${key}`,
           activityDate: today,
+          countsAsTraining: false,
         })
         .onConflictDoNothing()
         .returning({ id: xpTransactions.id });
