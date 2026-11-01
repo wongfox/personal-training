@@ -218,6 +218,8 @@ export function scoreDimension(dim: FeedbackDimension, m: TextMetrics, ctx: Scor
       return { key: dim, label, score: clamp(s), note: m.avgSentenceLength > 22 ? `Sentences average ${Math.round(m.avgSentenceLength)} words — break them up.` : undefined };
     }
     case "confidence": {
+      // A one- or two-word reply isn't confident, it's disengaged.
+      if (m.words < 4) return { key: dim, label, score: 25, note: "Too short to read as confident — it sounds disengaged." };
       const s = 92 - m.hedges.length * 12 - m.apologies.length * 15 - Math.max(0, m.exclamations - 1) * 5;
       return { key: dim, label, score: clamp(Math.max(10, s)) };
     }

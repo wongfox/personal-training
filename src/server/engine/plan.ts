@@ -53,6 +53,46 @@ export function pickJourney(primaryGoal: GoalKey, journeys: JourneyOption[]): Jo
   return journeys[0];
 }
 
+/**
+ * The whole plan as an ordered sequence of journeys: the primary goal's
+ * journey first, then the secondary goals', then everything else — so the
+ * 90 days are filled with real lessons, not one short journey.
+ */
+export function buildRoadmap(primaryGoal: GoalKey, secondaryGoals: GoalKey[], journeys: JourneyOption[]): string[] {
+  const order: string[] = [];
+  for (const goal of [primaryGoal, ...secondaryGoals]) {
+    const j = pickJourney(goal, journeys);
+    if (j && !order.includes(j.id)) order.push(j.id);
+  }
+  for (const j of journeys) if (!order.includes(j.id)) order.push(j.id);
+  return order;
+}
+
+export interface RoadmapStage {
+  id: string;
+  title: string;
+  lessons: number;
+  completed: number;
+  status: "done" | "current" | "upcoming";
+  fromWeek: number;
+  toWeek: number;
+}
+
+/** Spreads the journeys across plan weeks at the learner's training rhythm. */
+export function scheduleRoadmap(
+  stages: Omit<RoadmapStage, "fromWeek" | "toWeek">[],
+  lessonsPerWeek: number,
+): RoadmapStage[] {
+  let cursor = 0;
+  return stages.map((s) => {
+    const remaining = s.lessons;
+    const fromWeek = Math.floor(cursor / lessonsPerWeek) + 1;
+    cursor += remaining;
+    const toWeek = Math.max(fromWeek, Math.ceil(cursor / lessonsPerWeek));
+    return { ...s, fromWeek, toWeek };
+  });
+}
+
 export const FREQUENCY_DAYS: Record<Frequency, number> = { daily: 7, five_per_week: 5, three_per_week: 3 };
 
 export const FREQUENCY_LABEL: Record<Frequency, string> = {

@@ -1,6 +1,8 @@
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import type { Executor } from "@/server/db";
+import { invalidateUserSessions } from "@/server/auth/sessions";
 import {
+  emailVerificationTokens,
   oauthAccounts,
   passwordResetTokens,
   profiles,
@@ -43,14 +45,59 @@ function superAdminEmails(): string[] {
     .filter(Boolean);
 }
 
+/**
+ * SUPER_ADMIN_EMAILS only takes effect once the address is proven to belong to
+ * the account holder (email link or a Google-verified address) — otherwise
+ * anyone could claim admin by registering that email first.
+ */
+async function applyBootstrapRoles(db: Executor, userId: string, email: string) {
+  if (superAdminEmails().includes(email.toLowerCase())) await grantRole(db, userId, "SUPER_ADMIN");
+}
+
 /** Profile, settings, streak row and base role for a brand-new account. */
-async function scaffoldUser(db: Executor, userId: string, email: string, name: string, timezone?: string) {
+async function scaffoldUser(db: Executor, userId: string, name: string, timezone?: string) {
   const tz = timezone && isValidTimeZone(timezone) ? timezone : "UTC";
   await db.insert(profiles).values({ userId, displayName: name, timezone: tz }).onConflictDoNothing();
   await db.insert(userSettings).values({ userId }).onConflictDoNothing();
   await db.insert(streaks).values({ userId }).onConflictDoNothing();
   await grantRole(db, userId, "USER");
-  if (superAdminEmails().includes(email.toLowerCase())) await grantRole(db, userId, "SUPER_ADMIN");
+}
+
+const VERIFY_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+
+export async function createEmailVerification(db: Executor, userId: string): Promise<string> {
+  const token = generateToken();
+  await db.insert(emailVerificationTokens).values({ id: sha256(token), userId, expiresAt: new Date(Date.now() + VERIFY_TTL_MS) });
+  return token;
+}
+
+/** Marks the email as verified (single-use token) and applies bootstrap roles. Returns the user id. */
+export async function verifyEmail(db: Executor, token: string): Promise<string | null> {
+  const [row] = await db
+    .select()
+    .from(emailVerificationTokens)
+    .where(and(eq(emailVerificationTokens.id, sha256(token)), isNull(emailVerificationTokens.usedAt), gt(emailVerificationTokens.expiresAt, new Date())));
+  if (!row) return null;
+  const [user] = await db.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.id, row.userId)).returning({ id: users.id, email: users.email });
+  await db.update(emailVerificationTokens).set({ usedAt: new Date() }).where(and(eq(emailVerificationTokens.userId, row.userId), isNull(emailVerificationTokens.usedAt)));
+  if (user) await applyBootstrapRoles(db, user.id, user.email);
+  return row.userId;
+}
+
+/** Operator bootstrap (CLI): a verified account with the given role. */
+export async function createVerifiedUser(db: Executor, input: { name: string; email: string; password: string; role?: RoleKey }) {
+  const existing = await findUserByEmail(db, input.email);
+  const userId =
+    existing?.id ??
+    (
+      await db
+        .insert(users)
+        .values({ email: input.email.toLowerCase(), name: input.name, passwordHash: await hashPassword(input.password), emailVerifiedAt: new Date() })
+        .returning({ id: users.id })
+    )[0].id;
+  if (!existing) await scaffoldUser(db, userId, input.name);
+  if (input.role) await grantRole(db, userId, input.role);
+  return userId;
 }
 
 export async function findUserByEmail(db: Executor, email: string) {
@@ -76,7 +123,7 @@ export async function registerUser(
     .onConflictDoNothing()
     .returning({ id: users.id });
   if (!user) return { ok: false, error: "email_taken" };
-  await scaffoldUser(db, user.id, input.email, input.name, input.timezone);
+  await scaffoldUser(db, user.id, input.name, input.timezone);
   return { ok: true, userId: user.id };
 }
 
@@ -130,8 +177,13 @@ export async function upsertGoogleUser(
     if (existing.status !== "active") return { ok: false, error: "suspended" };
     await db.insert(oauthAccounts).values({ userId: existing.id, provider: "google", providerAccountId: profile.sub });
     if (!existing.emailVerifiedAt) {
-      await db.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.id, existing.id));
+      // The address was never proven by the password account, so whoever set
+      // that password may not own the mailbox: Google's verified owner wins,
+      // the unproven password is dropped and its sessions are closed.
+      await db.update(users).set({ emailVerifiedAt: new Date(), passwordHash: null }).where(eq(users.id, existing.id));
+      await invalidateUserSessions(db, existing.id);
     }
+    await applyBootstrapRoles(db, existing.id, existing.email);
     return { ok: true, userId: existing.id };
   }
 
@@ -145,8 +197,44 @@ export async function upsertGoogleUser(
     })
     .returning({ id: users.id });
   await db.insert(oauthAccounts).values({ userId: user.id, provider: "google", providerAccountId: profile.sub });
-  await scaffoldUser(db, user.id, profile.email, profile.name, timezone);
+  await scaffoldUser(db, user.id, profile.name, timezone);
+  await applyBootstrapRoles(db, user.id, profile.email);
   return { ok: true, userId: user.id };
+}
+
+export async function changePassword(
+  db: Executor,
+  userId: string,
+  current: string,
+  next: string,
+  keepSessionId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const [user] = await db.select().from(users).where(eq(users.id, userId));
+  if (!user) return { ok: false, error: "Account not found." };
+  // Google-only accounts have no password yet and may set one.
+  if (user.passwordHash && !(await verifyPassword(current, user.passwordHash))) return { ok: false, error: "Your current password is incorrect." };
+  await db.update(users).set({ passwordHash: await hashPassword(next) }).where(eq(users.id, userId));
+  await invalidateUserSessions(db, userId, keepSessionId);
+  return { ok: true };
+}
+
+/** Permanently deletes an account and everything it owns (cascades). */
+export async function deleteAccount(db: Executor, userId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const [isSuper] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(userRoles)
+    .innerJoin(roles, eq(roles.id, userRoles.roleId))
+    .where(and(eq(userRoles.userId, userId), eq(roles.key, "SUPER_ADMIN")));
+  if (Number(isSuper?.n) > 0) {
+    const [others] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(userRoles)
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(and(eq(roles.key, "SUPER_ADMIN"), sql`${userRoles.userId} <> ${userId}`));
+    if (Number(others?.n) === 0) return { ok: false, error: "You're the only super admin. Grant the role to someone else first." };
+  }
+  await db.delete(users).where(eq(users.id, userId));
+  return { ok: true };
 }
 
 /** Returns a raw token to email, or null when the account doesn't exist (caller must not reveal which). */

@@ -4,6 +4,8 @@
  */
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type { Executor } from "@/server/db";
+import { FREQUENCY_DAYS, type Frequency, type RoadmapStage, scheduleRoadmap } from "@/server/engine/plan";
+import { planRoadmap } from "./learning";
 import {
   exerciseAttempts,
   exercises,
@@ -106,4 +108,23 @@ export async function getResource(db: Executor, slug: string) {
     .leftJoin(expertSources, eq(expertSources.id, resources.expertSourceId))
     .where(and(eq(resources.slug, slug), eq(resources.status, "published")));
   return row ?? null;
+}
+
+/** The plan's journeys as a week-by-week timeline at the learner's training rhythm. */
+export async function getRoadmapView(
+  db: Executor,
+  userId: string,
+  plan: { roadmap: string[]; journeyId: string | null; frequency: Frequency; durationDays: number },
+) {
+  const [order, list] = await Promise.all([planRoadmap(db, plan), listJourneys(db, userId)]);
+  const stats = new Map(list.map((j) => [j.id, j]));
+  const stages = order.map((j) => {
+    const lessons = Number(stats.get(j.id)?.lessons ?? 0);
+    const completed = Number(stats.get(j.id)?.completed ?? 0);
+    const status: RoadmapStage["status"] = lessons > 0 && completed >= lessons ? "done" : j.id === plan.journeyId ? "current" : "upcoming";
+    return { id: j.id, title: j.title, lessons, completed, status };
+  });
+  const scheduled = scheduleRoadmap(stages.filter((s) => s.lessons > 0), FREQUENCY_DAYS[plan.frequency]);
+  const planWeeks = Math.ceil(plan.durationDays / 7);
+  return { stages: scheduled, planWeeks, lastWeek: scheduled.at(-1)?.toWeek ?? 0, totalLessons: scheduled.reduce((s, x) => s + x.lessons, 0) };
 }

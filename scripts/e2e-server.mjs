@@ -12,7 +12,6 @@ const env = {
   PGLITE_DIR: dir,
   DATABASE_URL: "",
   APP_URL: `http://localhost:${port}`,
-  SUPER_ADMIN_EMAILS: "admin@e2e.test",
   ANTHROPIC_API_KEY: "",
   ANTHROPIC_AUTH_TOKEN: "",
 };
@@ -20,6 +19,8 @@ const shell = process.platform === "win32";
 
 const setup = spawnSync("npx", ["tsx", "scripts/db.ts", "setup"], { env, stdio: "inherit", shell });
 if (setup.status !== 0) process.exit(setup.status ?? 1);
+const admin = spawnSync("npx", ["tsx", "scripts/db.ts", "create-admin", "admin@e2e.test", '"a long enough password"', "Root"], { env, stdio: "inherit", shell });
+if (admin.status !== 0) process.exit(admin.status ?? 1);
 
 const args = process.env.E2E_PROD ? ["next", "start", "-p", port] : ["next", "dev", "-p", port];
 const server = spawn("npx", args, { env, stdio: "inherit", shell });

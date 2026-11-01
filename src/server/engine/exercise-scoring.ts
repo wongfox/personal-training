@@ -241,19 +241,27 @@ function scoreRoleplay(config: RoleplayConfig, r: ExerciseResponse["roleplay"]):
     .map((t, i) => ({ t, prev: r.turns.slice(0, i).reverse().find((p) => p.role === "counterpart")?.text ?? "" }))
     .filter(({ t }) => t.role === "user")
     .map(({ t, prev }) => evaluateText(t.text, config.focus, { wordBudget: 60, counterpartText: prev }));
+  // Substance: a real conversational turn needs a few sentences' worth of content.
+  // Evasive replies ("ok", "fine") drag every dimension down instead of reading as "concise".
+  const substance = userTurns.map((t) => Math.min(1, analyzeText(t.text).words / 12));
+  const substanceFactor = substance.reduce((s, x) => s + x, 0) / substance.length;
+  const evasive = substance.filter((x) => x < 0.34).length;
   const dims = config.focus.map((key, idx) => {
-    const avg = Math.round(perTurn.reduce((s, p) => s + (p.dimensions?.[idx]?.score ?? 0), 0) / perTurn.length);
-    return { ...perTurn[0].dimensions![idx], score: avg, note: undefined };
+    const avg = perTurn.reduce((s, p, i) => s + (p.dimensions?.[idx]?.score ?? 0) * (0.35 + 0.65 * substance[i]), 0) / perTurn.length;
+    return { ...perTurn[0].dimensions![idx], score: Math.round(avg), note: undefined };
   });
-  const score = Math.round(dims.reduce((s, d) => s + d.score, 0) / dims.length);
+  const score = Math.round((dims.reduce((s, d) => s + d.score, 0) / dims.length) * (0.5 + 0.5 * substanceFactor));
   const allText = userTurns.map((t) => t.text).join(" ");
   const m = analyzeText(allText);
-  const strengths = [...new Set(perTurn.flatMap((p) => p.strengths))].slice(0, 2);
+  const strengths = substanceFactor < 0.5 ? [] : [...new Set(perTurn.flatMap((p) => p.strengths))].slice(0, 2);
   const improvements = [...new Set(perTurn.flatMap((p) => p.improvements))].slice(0, 3);
   if (config.mode === "networking" && !/(email|linkedin|number|card|connect|coffee|follow up|follow-up)/i.test(allText)) {
     improvements.push("You never closed the loop — suggest a next step and exchange contact details.");
   }
   if (m.questions === 0) improvements.unshift("You didn't ask a single question. Curiosity is what makes people want to keep talking.");
+  if (evasive > 0) {
+    improvements.unshift(`${evasive} of your replies were a word or two. Short answers end conversations — add one detail and one question each time.`);
+  }
   return {
     score,
     summary: summaryForScore(score),

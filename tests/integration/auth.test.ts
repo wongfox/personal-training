@@ -6,11 +6,13 @@ import type { DB } from "@/server/db";
 import { sessions, users } from "@/server/db/schema";
 import {
   authenticate,
+  createEmailVerification,
   createPasswordReset,
   grantRole,
   registerUser,
   resetPassword,
   upsertGoogleUser,
+  verifyEmail,
 } from "@/server/services/accounts";
 import { setupDatabase } from "./helpers";
 
@@ -55,10 +57,15 @@ describe("accounts and sessions", () => {
     expect(await validateSessionToken(db, s3.token)).toBeNull();
   });
 
-  it("bootstraps super admins from SUPER_ADMIN_EMAILS", async () => {
+  it("bootstraps super admins from SUPER_ADMIN_EMAILS only after the email is verified", async () => {
     const reg = await registerUser(db, { name: "Boss", email: "boss@example.com", password: "a long enough password" });
     if (!reg.ok) throw new Error();
     const { token } = await createSession(db, reg.userId);
+    expect((await validateSessionToken(db, token))?.user.roles).not.toContain("SUPER_ADMIN");
+    const verification = await createEmailVerification(db, reg.userId);
+    expect(await verifyEmail(db, "not-a-real-token-xxxxxxxxxxxxxxx")).toBeNull();
+    expect(await verifyEmail(db, verification)).toBe(reg.userId);
+    expect(await verifyEmail(db, verification)).toBeNull(); // single use
     expect((await validateSessionToken(db, token))?.user.roles).toEqual(expect.arrayContaining(["USER", "SUPER_ADMIN"]));
     await grantRole(db, reg.userId, "COACH");
     expect((await validateSessionToken(db, token))?.user.roles).toContain("COACH");
@@ -79,8 +86,13 @@ describe("accounts and sessions", () => {
   it("links Google sign-in only for verified emails", async () => {
     await registerUser(db, { name: "Gi", email: "gi@example.com", password: "a long enough password" });
     expect((await upsertGoogleUser(db, { sub: "g-1", email: "gi@example.com", emailVerified: false, name: "Gi" })).ok).toBe(false);
+    // Someone pre-registered gi@example.com with a password but never proved the address.
+    const squatter = await createSession(db, (await authenticate(db, "gi@example.com", "a long enough password") as { userId: string }).userId);
     const linked = await upsertGoogleUser(db, { sub: "g-1", email: "gi@example.com", emailVerified: true, name: "Gi" });
     expect(linked.ok).toBe(true);
+    // The mailbox owner (via Google) takes over: the unproven password and its sessions die.
+    expect((await authenticate(db, "gi@example.com", "a long enough password")).ok).toBe(false);
+    expect(await validateSessionToken(db, squatter.token)).toBeNull();
     const fresh = await upsertGoogleUser(db, { sub: "g-2", email: "new@example.com", emailVerified: true, name: "New" });
     expect(fresh.ok).toBe(true);
     const again = await upsertGoogleUser(db, { sub: "g-2", email: "new@example.com", emailVerified: true, name: "New" });

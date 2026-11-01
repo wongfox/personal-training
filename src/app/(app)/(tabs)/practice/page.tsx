@@ -19,10 +19,22 @@ const FAMILY_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
   "Memory Trainer": Brain,
 };
 
+const FAMILY_BY_SLUG: [RegExp, string][] = [
+  [/conversation/, "Conversation Simulator"],
+  [/networking/, "Networking Practice"],
+  [/presentation/, "Presentation Trainer"],
+  [/organizer/, "Thought Organizer"],
+  [/story/, "Story Builder"],
+  [/decision/, "Decision Framework"],
+  [/memory/, "Memory Trainer"],
+  [/hedge/, "Hedge Hunter"],
+];
+
 function family(tool: PracticeToolSummary): string {
+  const bySlug = FAMILY_BY_SLUG.find(([re]) => re.test(tool.slug));
+  if (bySlug) return bySlug[1];
   const prefix = tool.title.split(":")[0].trim();
-  if (prefix !== tool.title) return prefix;
-  return tool.type === "pitch" ? "Presentation Trainer" : "Quick drills";
+  return prefix !== tool.title ? prefix : "Quick drills";
 }
 
 export default async function PracticePage({ searchParams }: PageProps<"/practice">) {

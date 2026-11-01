@@ -14,9 +14,32 @@ export interface SimReply {
   mode: "ai" | "scripted";
 }
 
-function scripted(config: RoleplayConfig, userTurns: number): SimReply {
-  if (userTurns <= config.scriptedTurns.length) {
-    return { reply: config.scriptedTurns[userTurns - 1], done: false, mode: "scripted" };
+const NUDGES = [
+  "Sorry — say a bit more? I'm not sure I followed.",
+  "Hm. Can you give me an example of what you mean?",
+];
+
+function isEvasive(text: string): boolean {
+  return text.trim().split(/\s+/).filter(Boolean).length < 4;
+}
+
+/**
+ * Scripted partner: advances only on real answers. Evasive one-word replies
+ * get a natural nudge instead of praise, and three in a row end the chat —
+ * the way a real person would react.
+ */
+export function scripted(config: RoleplayConfig, turns: SimTurn[]): SimReply {
+  const userTurns = turns.filter((t) => t.role === "user");
+  const last = userTurns.at(-1);
+  if (last && isEvasive(last.text)) {
+    let streak = 0;
+    for (let i = userTurns.length - 1; i >= 0 && isEvasive(userTurns[i].text); i--) streak++;
+    if (streak >= 3) return { reply: `I should probably let you go — good to meet you.`, done: true, mode: "scripted" };
+    return { reply: NUDGES[(streak - 1) % NUDGES.length], done: false, mode: "scripted" };
+  }
+  const substantive = userTurns.filter((t) => !isEvasive(t.text)).length;
+  if (substantive <= config.scriptedTurns.length) {
+    return { reply: config.scriptedTurns[substantive - 1], done: false, mode: "scripted" };
   }
   return { reply: null, done: true, mode: "scripted" };
 }
@@ -28,7 +51,7 @@ function scripted(config: RoleplayConfig, userTurns: number): SimReply {
  */
 export async function counterpartReply(config: RoleplayConfig, turns: SimTurn[]): Promise<SimReply> {
   const userTurns = turns.filter((t) => t.role === "user").length;
-  if (!aiEnabled()) return scripted(config, userTurns);
+  if (!aiEnabled()) return scripted(config, turns);
 
   const maxUserTurns = config.scriptedTurns.length + 2;
   const last = userTurns >= maxUserTurns;
@@ -58,16 +81,16 @@ Rules: stay in character; reply in 1–3 natural spoken sentences; react realist
       },
       { timeout: 25_000 },
     );
-    if (message.stop_reason === "refusal") return scripted(config, userTurns);
+    if (message.stop_reason === "refusal") return scripted(config, turns);
     const reply = message.content
       .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
       .map((b) => b.text)
       .join("")
       .trim();
-    if (!reply) return scripted(config, userTurns);
+    if (!reply) return scripted(config, turns);
     return { reply, done: last, mode: "ai" };
   } catch (error) {
     console.warn("[ai] simulator unavailable — using script", error instanceof Error ? error.message : error);
-    return scripted(config, userTurns);
+    return scripted(config, turns);
   }
 }

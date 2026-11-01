@@ -20,7 +20,8 @@ import { applySkillGain, applyTrainingDay, levelForXp, type StreakEvent } from "
 
 type XpReason = (typeof xpTransactions.$inferInsert)["reason"];
 
-const NON_TRAINING: XpReason[] = ["onboarding_completed", "achievement_earned"];
+/** Admin-like rituals and bonuses earn XP but don't count as a training day (no streak farming). */
+const NON_TRAINING: XpReason[] = ["onboarding_completed", "achievement_earned", "weekly_review_completed", "checkpoint_completed"];
 
 export interface ActivityInput {
   reason: XpReason;

@@ -128,7 +128,10 @@ describe("the daily training loop", () => {
     const refl = await db.transaction((tx) =>
       saveMissionReflection(tx, userId, DAY1, done.missionAttemptId!, { whatHappened: "I asked first", whatWorked: "They opened up", whatToImprove: "", whatLearned: "Questions first" }),
     );
-    expect(refl.awarded).toBe(true);
+    expect(refl.reward.awarded).toBe(true);
+    // Feedback is written from the learner's own words, and points to the next lesson.
+    expect(refl.feedback.observation).toContain("They opened up");
+    expect(refl.feedback.nextStep).toContain(second.title);
 
     // Next day: the next lesson opens, reviews are due, the streak continues.
     const day2 = (await getHomeData(db, userId, DAY2))!;

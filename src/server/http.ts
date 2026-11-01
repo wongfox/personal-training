@@ -31,6 +31,21 @@ export function sameOrigin(request: Request): boolean {
   }
 }
 
+/**
+ * The local day an action counts for. Normally today; for writes replayed from
+ * the offline queue, the day they actually happened — accepted only within
+ * the last 36 hours so it can't be used to backfill a broken streak.
+ */
+function trainingDay(request: Request, timezone: string): string {
+  const occurred = request.headers.get("x-offline-replay") ? request.headers.get("x-occurred-at") : null;
+  if (occurred) {
+    const at = new Date(occurred);
+    const age = Date.now() - at.getTime();
+    if (!Number.isNaN(at.getTime()) && age >= 0 && age <= 36 * 3600 * 1000) return localDate(timezone, at);
+  }
+  return localDate(timezone);
+}
+
 export function apiError(status: number, error: string) {
   return NextResponse.json({ error }, { status });
 }
@@ -60,7 +75,7 @@ export function apiHandler<P>(
       if (Object.values(params as Record<string, unknown>).some((v) => typeof v !== "string" || !UUID.test(v))) {
         return apiError(404, "Not found.");
       }
-      const ctx: ApiContext = { user: session.user, today: localDate(session.user.timezone), request };
+      const ctx: ApiContext = { user: session.user, today: trainingDay(request, session.user.timezone), request };
       const result = await handler(ctx, params);
       return NextResponse.json(result ?? { ok: true });
     } catch (error) {

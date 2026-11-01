@@ -3,14 +3,15 @@
 import { CloudOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { flushOutbox, pendingCount } from "@/lib/api-client";
+import { flushOutbox, pendingCount, setOutboxUser } from "@/lib/api-client";
 
 /** Flushes queued progress when the app comes back online, and shows an offline banner. */
-export function OfflineSync() {
+export function OfflineSync({ userId }: { userId: string }) {
   const router = useRouter();
   const [offline, setOffline] = useState(false);
 
   useEffect(() => {
+    setOutboxUser(userId);
     const sync = async () => {
       setOffline(!navigator.onLine);
       if (navigator.onLine && pendingCount() > 0) {
@@ -26,7 +27,7 @@ export function OfflineSync() {
       window.removeEventListener("online", sync);
       window.removeEventListener("offline", goOffline);
     };
-  }, [router]);
+  }, [router, userId]);
 
   if (!offline) return null;
   return (

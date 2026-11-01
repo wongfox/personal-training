@@ -2,7 +2,7 @@
  * Write side of the daily loop: lessons, exercises, knowledge checks,
  * missions, reflections and spaced reviews.
  */
-import { and, asc, eq, isNotNull, lte, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, lte, or } from "drizzle-orm";
 import type { ISODate } from "@/lib/dates";
 import { categorySkill } from "@/lib/taxonomy";
 import type { Executor } from "@/server/db";
@@ -16,6 +16,7 @@ import {
   journeys,
   lessonProgress,
   lessons,
+  quizAnswerChecks,
   quizAttempts,
   quizQuestions,
   quizzes,
@@ -25,8 +26,9 @@ import {
 } from "@/server/db/schema";
 import type { ActionReflectionAnswers, ExerciseFeedback } from "@/server/db/types";
 import { resolveOrderKeys, toClientConfig } from "@/server/engine/client-config";
+import { reflectionFeedback } from "@/server/engine/coach-insight";
 import { InvalidResponseError, scoreExercise } from "@/server/engine/exercise-scoring";
-import { initialReview, scheduleReview, SKILL_GAINS, XP } from "@/server/engine/progression";
+import { initialReview, scaledXp, scheduleReview, SKILL_GAINS, XP } from "@/server/engine/progression";
 import { NotFoundError, ValidationError } from "@/server/errors";
 import { type ActivityResult, mergeResults, recordActivity } from "./rewards";
 import { getJourneyOutline } from "./training";
@@ -103,7 +105,7 @@ export async function getLessonForUser(db: Executor, userId: string, lessonIdOrS
     .from(exercises)
     .where(and(eq(exercises.lessonId, ctx.lesson.id), eq(exercises.status, "published")))
     .limit(1);
-  const [quiz] = await db.select().from(quizzes).where(eq(quizzes.lessonId, ctx.lesson.id));
+  const [quiz] = await db.select().from(quizzes).where(and(eq(quizzes.lessonId, ctx.lesson.id), eq(quizzes.status, "published")));
   const questions = quiz
     ? await db
         .select({ id: quizQuestions.id, prompt: quizQuestions.prompt, options: quizQuestions.options })
@@ -111,7 +113,7 @@ export async function getLessonForUser(db: Executor, userId: string, lessonIdOrS
         .where(eq(quizQuestions.quizId, quiz.id))
         .orderBy(asc(quizQuestions.order))
     : [];
-  const [action] = await db.select().from(dailyActions).where(eq(dailyActions.lessonId, ctx.lesson.id));
+  const [action] = await db.select().from(dailyActions).where(and(eq(dailyActions.lessonId, ctx.lesson.id), eq(dailyActions.status, "published")));
   const [progress] = await db
     .select()
     .from(lessonProgress)
@@ -241,7 +243,7 @@ export async function recordExerciseAttempt(
   const reward = exercise.isPractice
     ? await recordActivity(db, userId, today, {
         reason: "practice_completed",
-        amount: XP.practice,
+        amount: scaledXp(XP.practice, feedback.score),
         key: `practice:${exercise.id}:${today}`,
         sourceType: "exercise",
         sourceId: exercise.id,
@@ -250,7 +252,7 @@ export async function recordExerciseAttempt(
       })
     : await recordActivity(db, userId, today, {
         reason: "exercise_completed",
-        amount: XP.exercise,
+        amount: scaledXp(XP.exercise, feedback.score),
         key: `exercise:${exercise.id}`,
         sourceType: "exercise",
         sourceId: exercise.id,
@@ -287,7 +289,7 @@ export async function submitExercise(
 /* ─────────────────────────── Knowledge check ─────────────────────────── */
 
 async function quizForUser(db: Executor, userId: string, quizId: string, today: ISODate) {
-  const [quiz] = await db.select().from(quizzes).where(eq(quizzes.id, quizId));
+  const [quiz] = await db.select().from(quizzes).where(and(eq(quizzes.id, quizId), eq(quizzes.status, "published")));
   if (!quiz) throw new NotFoundError("Quiz not found.");
   const ctx = await requireOpenLesson(db, userId, quiz.lessonId, today);
   const questions = await db.select().from(quizQuestions).where(eq(quizQuestions.quizId, quiz.id)).orderBy(asc(quizQuestions.order));
@@ -298,20 +300,27 @@ export async function checkQuizAnswer(db: Executor, userId: string, today: ISODa
   const { questions } = await quizForUser(db, userId, quizId, today);
   const q = questions.find((x) => x.id === questionId);
   if (!q) throw new NotFoundError("Question not found.");
+  if (answer < 0 || answer >= q.options.length) throw new ValidationError("Pick one of the options.");
+  // Checking reveals the answer, so the first answer checked is the one that counts.
+  await db.insert(quizAnswerChecks).values({ userId, questionId: q.id, answer }).onConflictDoNothing();
   return { correct: q.correctIndex === answer, correctIndex: q.correctIndex, explanation: q.explanation };
 }
 
 export async function submitQuiz(db: Executor, userId: string, today: ISODate, quizId: string, answers: number[]) {
   const { quiz, questions, lesson } = await quizForUser(db, userId, quizId, today);
   if (answers.length !== questions.length) throw new ValidationError("Answer every question.");
+  const locked = new Map(
+    (await db.select().from(quizAnswerChecks).where(and(eq(quizAnswerChecks.userId, userId), inArray(quizAnswerChecks.questionId, questions.map((q) => q.id))))).map((c) => [c.questionId, c.answer]),
+  );
+  const scored = questions.map((q, i) => locked.get(q.id) ?? answers[i]);
   const results = questions.map((q, i) => ({
     questionId: q.id,
-    correct: q.correctIndex === answers[i],
+    correct: q.correctIndex === scored[i],
     correctIndex: q.correctIndex,
     explanation: q.explanation,
   }));
   const score = results.filter((r) => r.correct).length;
-  await db.insert(quizAttempts).values({ userId, quizId: quiz.id, answers, score, total: questions.length });
+  await db.insert(quizAttempts).values({ userId, quizId: quiz.id, answers: scored, score, total: questions.length });
 
   // Every concept enters spaced repetition on first exposure.
   for (const q of questions) {
@@ -397,7 +406,7 @@ export async function completeLesson(
 
   // Commit to today's real-world mission.
   let missionAttemptId: string | null = null;
-  const [action] = await db.select().from(dailyActions).where(eq(dailyActions.lessonId, lesson.id));
+  const [action] = await db.select().from(dailyActions).where(and(eq(dailyActions.lessonId, lesson.id), eq(dailyActions.status, "published")));
   if (action) {
     await db.insert(dailyActionAttempts).values({ userId, dailyActionId: action.id, actionDate: today }).onConflictDoNothing();
     const [attempt] = await db
@@ -418,12 +427,24 @@ export async function completeLesson(
     journeyCompleted = updated.length > 0;
   }
 
+  // Finishing a journey moves the plan on to the next one in the roadmap (starting tomorrow).
+  let nextLesson = outline?.nextLesson ? { id: outline.nextLesson.id, title: outline.nextLesson.title, moduleTitle: outline.nextLesson.moduleTitle } : null;
+  let nextJourney: { id: string; title: string } | null = null;
+  if (outline?.journeyComplete) {
+    nextJourney = await advanceRoadmap(db, userId, ctx.journeyId);
+    if (nextJourney) {
+      const nextOutline = await getJourneyOutline(db, userId, nextJourney.id, today);
+      nextLesson = nextOutline?.nextLesson ? { id: nextOutline.nextLesson.id, title: nextOutline.nextLesson.title, moduleTitle: nextOutline.nextLesson.moduleTitle } : null;
+    }
+  }
+
   return {
     alreadyCompleted,
     reward: mergeResults(rewards)!,
     missionAttemptId,
-    nextLesson: outline?.nextLesson ? { id: outline.nextLesson.id, title: outline.nextLesson.title, moduleTitle: outline.nextLesson.moduleTitle } : null,
+    nextLesson,
     journeyCompleted,
+    nextJourney,
     journeyId: ctx.journeyId,
   };
 }
@@ -514,7 +535,7 @@ export async function saveMissionReflection(
     .where(and(eq(reflections.userId, userId), eq(reflections.dailyActionAttemptId, attemptId)));
   if (existing) await db.update(reflections).set({ answers: clean }).where(eq(reflections.id, existing.id));
   else await db.insert(reflections).values({ userId, kind: "action", lessonId: row.action.lessonId, dailyActionAttemptId: attemptId, answers: clean });
-  return recordActivity(db, userId, today, {
+  const reward = await recordActivity(db, userId, today, {
     reason: "reflection_completed",
     amount: XP.reflection,
     key: `reflection:action:${attemptId}`,
@@ -523,6 +544,12 @@ export async function saveMissionReflection(
     skillKey: categorySkill(row.lessonCategory),
     skillGain: SKILL_GAINS.reflection,
   });
+
+  const [plan] = await db.select({ journeyId: growthPlans.journeyId }).from(growthPlans).where(and(eq(growthPlans.userId, userId), eq(growthPlans.status, "active")));
+  const outline = plan?.journeyId ? await getJourneyOutline(db, userId, plan.journeyId, today) : null;
+  const next = outline?.todayLesson ?? outline?.nextLesson ?? null;
+  const feedback = reflectionFeedback({ outcome: row.attempt.outcome, answers: clean, next: next ? { title: next.title } : null });
+  return { reward, feedback };
 }
 
 /* ─────────────────────────── Spaced review ─────────────────────────── */
@@ -572,6 +599,43 @@ export async function answerReview(db: Executor, userId: string, today: ISODate,
     skillGain: correct ? 1 : 0,
   });
   return { correct, correctIndex: row.question.correctIndex, explanation: row.question.explanation, nextDueOn: next.dueOn, reward };
+}
+
+/* ─────────────────────────── Roadmap ─────────────────────────── */
+
+/** The plan's journeys in order (older plans without a stored roadmap fall back to catalogue order). */
+export async function planRoadmap(db: Executor, plan: { roadmap: string[]; journeyId: string | null }) {
+  const published = await db
+    .select({ id: journeys.id, title: journeys.title, category: journeys.category })
+    .from(journeys)
+    .where(eq(journeys.status, "published"))
+    .orderBy(asc(journeys.order));
+  const byId = new Map(published.map((j) => [j.id, j]));
+  const ids = plan.roadmap.length ? plan.roadmap.filter((id) => byId.has(id)) : [];
+  for (const j of published) if (!ids.includes(j.id)) ids.push(j.id);
+  if (plan.journeyId && ids.includes(plan.journeyId) && !plan.roadmap.length) {
+    ids.splice(ids.indexOf(plan.journeyId), 1);
+    ids.unshift(plan.journeyId);
+  }
+  return ids.map((id) => byId.get(id)!);
+}
+
+/** Enrols the learner in the next unfinished journey of their roadmap. */
+export async function advanceRoadmap(db: Executor, userId: string, finishedJourneyId: string) {
+  const [plan] = await db.select().from(growthPlans).where(and(eq(growthPlans.userId, userId), eq(growthPlans.status, "active")));
+  if (!plan) return null;
+  const done = new Set(
+    (await db.select({ id: userJourneys.journeyId }).from(userJourneys).where(and(eq(userJourneys.userId, userId), eq(userJourneys.status, "completed")))).map((r) => r.id),
+  );
+  done.add(finishedJourneyId);
+  const next = (await planRoadmap(db, plan)).find((j) => !done.has(j.id));
+  if (!next) return null;
+  await db
+    .insert(userJourneys)
+    .values({ userId, journeyId: next.id })
+    .onConflictDoUpdate({ target: [userJourneys.userId, userJourneys.journeyId], set: { status: "active" } });
+  await db.update(growthPlans).set({ journeyId: next.id }).where(eq(growthPlans.id, plan.id));
+  return { id: next.id, title: next.title };
 }
 
 /* ─────────────────────────── Journey switching ─────────────────────────── */

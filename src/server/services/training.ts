@@ -1,7 +1,7 @@
 /**
  * Read models for the learner's plan, journey and today's training.
  */
-import { and, asc, desc, eq, inArray, isNotNull, lte, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, lte, ne, notInArray, sql } from "drizzle-orm";
 import { addDays, type ISODate, startOfWeek } from "@/lib/dates";
 import type { Executor } from "@/server/db";
 import {
@@ -28,6 +28,7 @@ export async function getActivePlan(db: Executor, userId: string) {
       id: growthPlans.id,
       title: growthPlans.title,
       journeyId: growthPlans.journeyId,
+      roadmap: growthPlans.roadmap,
       level: growthPlans.level,
       dailyMinutes: growthPlans.dailyMinutes,
       frequency: growthPlans.frequency,
@@ -120,7 +121,23 @@ export async function getJourneyOutline(db: Executor, userId: string, journeyId:
         .where(and(eq(lessonProgress.userId, userId), inArray(lessonProgress.lessonId, ids)))
     : [];
   const progress = new Map<string, LessonProgressRef>(progressRows.map((p) => [p.lessonId, p]));
-  const resolution = resolveToday(ids, progress, today);
+  // A lesson already finished today in another journey (e.g. the one just completed) still counts as today's.
+  const [elsewhere] = await db
+    .select({
+      id: lessons.id,
+      slug: lessons.slug,
+      title: lessons.title,
+      description: lessons.description,
+      estimatedMinutes: lessons.estimatedMinutes,
+      category: lessons.category,
+      moduleTitle: journeyModules.title,
+    })
+    .from(lessonProgress)
+    .innerJoin(lessons, eq(lessons.id, lessonProgress.lessonId))
+    .innerJoin(journeyModules, eq(journeyModules.id, lessons.moduleId))
+    .where(and(eq(lessonProgress.userId, userId), eq(lessonProgress.completedOn, today), ne(journeyModules.journeyId, journeyId)))
+    .limit(1);
+  const resolution = resolveToday(ids, progress, today, { doneElsewhereToday: Boolean(elsewhere) });
 
   const modules: OutlineModule[] = [];
   for (const r of rows) {
@@ -153,7 +170,11 @@ export async function getJourneyOutline(db: Executor, userId: string, journeyId:
     total: ids.length,
     percent: ids.length ? Math.round((completed / ids.length) * 100) : 0,
     todayLesson: resolution.todayLessonId ? lessonById.get(resolution.todayLessonId)! : null,
-    doneTodayLesson: resolution.doneTodayLessonId ? lessonById.get(resolution.doneTodayLessonId)! : null,
+    doneTodayLesson: resolution.doneTodayLessonId
+      ? lessonById.get(resolution.doneTodayLessonId)!
+      : elsewhere
+        ? { ...elsewhere, state: "completed" as const, started: false }
+        : null,
     nextLesson: resolution.nextLessonId ? lessonById.get(resolution.nextLessonId)! : null,
     journeyComplete: resolution.journeyComplete,
   };
@@ -170,7 +191,7 @@ export async function trainingDays(db: Executor, userId: string, from: ISODate, 
       and(
         eq(xpTransactions.userId, userId),
         sql`${xpTransactions.activityDate} between ${from} and ${to}`,
-        notInArray(xpTransactions.reason, ["onboarding_completed", "achievement_earned"]),
+        notInArray(xpTransactions.reason, ["onboarding_completed", "achievement_earned", "weekly_review_completed", "checkpoint_completed"]),
       ),
     );
   return rows.map((r) => r.day).sort();
@@ -241,6 +262,6 @@ export async function getMissionOn(db: Executor, userId: string, day: ISODate) {
 }
 
 export async function getMissionForLesson(db: Executor, lessonId: string) {
-  const [row] = await db.select().from(dailyActions).where(eq(dailyActions.lessonId, lessonId));
+  const [row] = await db.select().from(dailyActions).where(and(eq(dailyActions.lessonId, lessonId), eq(dailyActions.status, "published")));
   return row ?? null;
 }

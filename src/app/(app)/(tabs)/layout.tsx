@@ -14,7 +14,7 @@ export default async function TabsLayout({ children }: LayoutProps<"/">) {
         </main>
       </div>
       <BottomNav />
-      <OfflineSync />
+      <OfflineSync userId={user.id} />
     </div>
   );
 }

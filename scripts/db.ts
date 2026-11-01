@@ -4,12 +4,14 @@
  *   npm run db:seed [-- --force]  seed reference data + content
  *   npm run db:setup              migrate + seed
  *   npm run admin:grant -- <email> <ROLE>
+ *   npm run admin:create -- <email> <password> [name]   (verified SUPER_ADMIN account)
  */
 import { closeDb, getDb } from "@/server/db";
 import { migrateDatabase } from "@/server/db/migrate";
 import { seedAll } from "@/server/db/seed";
 import { isRoleKey } from "@/server/auth/rbac";
-import { findUserByEmail, grantRole } from "@/server/services/accounts";
+import { createVerifiedUser, findUserByEmail, grantRole } from "@/server/services/accounts";
+import { passwordSchema } from "@/server/validation";
 
 async function main() {
   const [command, ...args] = process.argv.slice(2);
@@ -32,6 +34,13 @@ async function main() {
     if (!user) throw new Error(`No user with email ${email}`);
     await grantRole(db, user.id, role);
     console.log(`[db] granted ${role} to ${email}`);
+  }
+  if (command === "create-admin") {
+    const [email, password, name = "Admin"] = args;
+    if (!email || !password) throw new Error("Usage: admin:create -- <email> <password> [name]");
+    passwordSchema.parse(password);
+    await getDb().transaction((tx) => createVerifiedUser(tx, { email, password, name, role: "SUPER_ADMIN" }));
+    console.log(`[db] ${email} is a verified SUPER_ADMIN`);
   }
   await closeDb();
 }

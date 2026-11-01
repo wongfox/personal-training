@@ -27,6 +27,7 @@ import { levelForXp, XP } from "@/server/engine/progression";
 import { NotFoundError, ValidationError } from "@/server/errors";
 import { getSkillScores } from "./insights";
 import { getAssessmentQuestions, selfRatingSummary } from "./onboarding";
+import { reviewableWeek, weeklyReviewDue } from "./home";
 import { recordActivity } from "./rewards";
 import { type ActivePlan, getStreak, trainingDays } from "./training";
 
@@ -63,7 +64,7 @@ export async function getTotals(db: Executor, userId: string, range?: { from: IS
         .where(range ? and(eq(xpTransactions.userId, userId), gte(xpTransactions.activityDate, range.from), lte(xpTransactions.activityDate, range.to)) : eq(xpTransactions.userId, userId)),
     ),
   ]);
-  return { lessons, actions, exercises: exercisesDone, reflections: reflectionsCount, minutes: Math.round((lessonSeconds + exerciseSeconds) / 60), xp };
+  return { lessons, actions, exercises: exercisesDone, reflections: reflectionsCount, minutes: Math.ceil((lessonSeconds + exerciseSeconds) / 60), xp };
 }
 
 /* ─────────────────────────── Profile ─────────────────────────── */
@@ -145,13 +146,15 @@ async function skillDeltas(db: Executor, userId: string, from: ISODate, to: ISOD
   return rows.map((r) => ({ key: r.key, name: r.name, delta: Number(r.delta) }));
 }
 
-export async function computeWeeklyStats(db: Executor, userId: string, today: ISODate, plan: ActivePlan): Promise<{ stats: WeeklyStats; nextFocus: NextFocus }> {
-  const from = addDays(today, -6);
+/** Stats for one plan week (the 7 days starting at weekStart). */
+export async function computeWeeklyStats(db: Executor, userId: string, today: ISODate, plan: ActivePlan, weekStart: ISODate): Promise<{ stats: WeeklyStats; nextFocus: NextFocus }> {
+  const from = weekStart;
+  const to = addDays(weekStart, 6) < today ? addDays(weekStart, 6) : today;
   const [totals, days, streak, deltas] = await Promise.all([
-    getTotals(db, userId, { from, to: today }),
-    trainingDays(db, userId, from, today),
+    getTotals(db, userId, { from, to }),
+    trainingDays(db, userId, from, to),
     getStreak(db, userId, today),
-    skillDeltas(db, userId, from, today),
+    skillDeltas(db, userId, from, to),
   ]);
   const target = FREQUENCY_DAYS[plan.frequency];
   const sorted = [...deltas].sort((a, b) => b.delta - a.delta);
@@ -163,7 +166,7 @@ export async function computeWeeklyStats(db: Executor, userId: string, today: IS
 
   const stats: WeeklyStats = {
     weekStart: from,
-    weekEnd: today,
+    weekEnd: to,
     lessonsCompleted: totals.lessons,
     lessonsTarget: target,
     actionsCompleted: totals.actions,
@@ -190,8 +193,9 @@ export async function computeWeeklyStats(db: Executor, userId: string, today: IS
 }
 
 export async function saveWeeklyReview(db: Executor, userId: string, today: ISODate, plan: ActivePlan, reflection: string) {
-  const { stats, nextFocus } = await computeWeeklyStats(db, userId, today, plan);
-  const weekStart = addDays(today, -6);
+  if (!(await weeklyReviewDue(db, userId, today, plan.startDate))) throw new ValidationError("Your next weekly review isn't open yet.");
+  const { weekStart } = reviewableWeek(plan.startDate, today);
+  const { stats, nextFocus } = await computeWeeklyStats(db, userId, today, plan, weekStart);
   const [row] = await db
     .insert(weeklyReviews)
     .values({ userId, weekStart, stats, reflection: reflection.trim().slice(0, 2000) || null, nextFocus })
@@ -200,7 +204,7 @@ export async function saveWeeklyReview(db: Executor, userId: string, today: ISOD
   const reward = await recordActivity(db, userId, today, {
     reason: "weekly_review_completed",
     amount: XP.weeklyReview,
-    key: `weekly:${weekStart}`,
+    key: `weekly:${plan.id}:${weekStart}`,
     sourceType: "weekly_review",
     sourceId: row?.id ?? null,
   });

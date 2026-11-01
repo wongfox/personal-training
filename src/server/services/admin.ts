@@ -38,11 +38,16 @@ type Status = "draft" | "review" | "published" | "archived";
 
 /* ─────────────────────────── Metrics ─────────────────────────── */
 
+/** Learners only: onboarded accounts without staff roles. */
+const learnerOnly = (userIdColumn: unknown) =>
+  sql`exists (select 1 from profiles p where p.user_id = ${userIdColumn} and p.onboarding_completed_at is not null)
+    and not exists (select 1 from user_roles ur join roles r on r.id = ur.role_id where ur.user_id = ${userIdColumn} and r.key in ('SUPER_ADMIN','ADMIN','CONTENT_MANAGER','COACH'))`;
+
 async function distinctActive(db: Executor, days: number): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(distinct ${analyticsEvents.userId})::int` })
     .from(analyticsEvents)
-    .where(sql`${analyticsEvents.createdAt} >= now() - (${days} || ' days')::interval`);
+    .where(and(sql`${analyticsEvents.createdAt} >= now() - (${days} || ' days')::interval`, learnerOnly(analyticsEvents.userId)));
   return Number(row?.n ?? 0);
 }
 
@@ -93,7 +98,7 @@ export async function getMetrics(db: Executor) {
     db
       .select({ day: sql<string>`to_char(date_trunc('day', ${analyticsEvents.createdAt}), 'YYYY-MM-DD')`, n: sql<number>`count(distinct ${analyticsEvents.userId})::int` })
       .from(analyticsEvents)
-      .where(sql`${analyticsEvents.createdAt} >= now() - interval '14 days'`)
+      .where(and(sql`${analyticsEvents.createdAt} >= now() - interval '14 days'`, learnerOnly(analyticsEvents.userId)))
       .groupBy(sql`1`)
       .orderBy(sql`1`),
     db.select({ n: sql<number>`count(distinct ${lessonProgress.userId})::int` }).from(lessonProgress).where(eq(lessonProgress.status, "completed")),
@@ -108,6 +113,7 @@ export async function getMetrics(db: Executor) {
 
   return {
     registered: Number(registered.n),
+    learners: Number(onboarded.n),
     onboarded: Number(onboarded.n),
     dau,
     wau,
@@ -221,8 +227,13 @@ export async function listAudit(db: Executor, limit = 100) {
 
 /** Content managers draft and submit for review; only admins publish or archive. */
 export function assertStatusAllowed(actorRoles: string[], next: Status, current?: Status) {
-  const privileged = next === "published" || next === "archived" || current === "published" || current === "archived";
-  if (privileged && next !== current && !can(actorRoles, "content:publish")) {
+  if (can(actorRoles, "content:publish")) return;
+  // Live content is what learners see right now: changing it (wording, answer
+  // keys, status) is an admin decision, never a silent edit.
+  if (current === "published" || current === "archived") {
+    throw new ForbiddenError("This item is live. Only an admin can change it — ask them to move it back to Review if it needs work.");
+  }
+  if (next === "published" || next === "archived") {
     throw new ForbiddenError("Only admins can publish or archive. Set it to Review and an admin will publish it.");
   }
 }
@@ -404,11 +415,13 @@ export async function saveLesson(db: Executor, actor: { id: string; roles: strin
   }
 
   // Knowledge check: questions are matched by concept key so learners' review history survives edits.
-  if (v.quiz) {
+  if (!v.quiz) {
+    await db.update(quizzes).set({ status: "archived" }).where(eq(quizzes.lessonId, lesson.id));
+  } else {
     const [quiz] = await db
       .insert(quizzes)
       .values({ lessonId: lesson.id, title: `${v.title} — knowledge check`, estimatedMinutes: 2, ...live })
-      .onConflictDoUpdate({ target: quizzes.lessonId, set: { title: `${v.title} — knowledge check`, category: v.category } })
+      .onConflictDoUpdate({ target: quizzes.lessonId, set: { title: `${v.title} — knowledge check`, category: v.category, status: "published" } })
       .returning();
     const existing = await db.select().from(quizQuestions).where(eq(quizQuestions.quizId, quiz.id));
     const keep = new Set<string>();
@@ -429,6 +442,9 @@ export async function saveLesson(db: Executor, actor: { id: string; roles: strin
   if (v.action) {
     const values = { lessonId: lesson.id, title: v.action.title, description: v.action.description, successCriteria: v.action.successCriteria || null, estimatedMinutes: v.action.estimatedMinutes, ...live, difficulty: v.action.difficulty };
     await db.insert(dailyActions).values(values).onConflictDoUpdate({ target: dailyActions.lessonId, set: values });
+  } else {
+    // Removing the mission from a lesson retires it (history of past check-ins is kept).
+    await db.update(dailyActions).set({ status: "archived" }).where(eq(dailyActions.lessonId, lesson.id));
   }
 
   await audit(db, { actorId: actor.id, action: current ? "lesson.update" : "lesson.create", entityType: "lesson", entityId: lesson.id, metadata: { title: v.title, status: v.status } });

@@ -71,6 +71,8 @@ export async function requirePermission(permission: Permission): Promise<Session
 
 export async function getRequestMeta(): Promise<{ ipAddress: string | null; userAgent: string | null }> {
   const h = await headers();
+  // Prefer the platform-set x-real-ip (Vercel and most proxies overwrite it); x-forwarded-for
+  // can carry client-supplied entries, so it is only a fallback.
   const forwarded = h.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return { ipAddress: forwarded || h.get("x-real-ip") || null, userAgent: h.get("user-agent") };
+  return { ipAddress: h.get("x-real-ip") || forwarded || null, userAgent: h.get("user-agent") };
 }

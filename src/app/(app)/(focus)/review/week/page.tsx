@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { FocusShell } from "@/components/focus-shell";
+import { ButtonLink } from "@/components/ui/button";
 import { formatDay, localDate } from "@/lib/dates";
 import { requireUser } from "@/server/auth/current-user";
 import { getDb } from "@/server/db";
-import { computeWeeklyStats } from "@/server/services/progress";
+import { reviewableWeek, weeklyReviewDue } from "@/server/services/home";
+import { computeWeeklyStats, listWeeklyReviews } from "@/server/services/progress";
 import { getActivePlan } from "@/server/services/training";
 import { WeeklyReviewForm } from "./form";
 
@@ -16,8 +18,29 @@ export default async function WeeklyReviewPage() {
   const today = localDate(user.timezone);
   const plan = await getActivePlan(db, user.id);
   if (!plan) redirect("/onboarding");
-  const { stats } = await computeWeeklyStats(db, user.id, today, plan);
+  const week = reviewableWeek(plan.startDate, today);
 
+  if (!(await weeklyReviewDue(db, user.id, today, plan.startDate))) {
+    const [last] = await listWeeklyReviews(db, user.id);
+    return (
+      <FocusShell footer={<ButtonLink href="/home">Back to today</ButtonLink>}>
+        <div className="pt-10">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">Weekly review</p>
+          <h1 className="mt-2 font-display text-[34px] leading-tight">Your next review opens {formatDay(week.nextOpensOn, { weekday: "long", month: "short", day: "numeric" })}.</h1>
+          <p className="mt-3 text-[15px] text-ink-2">Each plan week is reviewed once, after its seventh day.</p>
+          {last && (
+            <div className="mt-8 rounded-3xl bg-ink p-6 text-bg">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-bg/60">This week&apos;s focus</p>
+              <p className="mt-2 font-display text-[26px] leading-tight">{last.nextFocus.headline}</p>
+              <p className="mt-3 text-[15px] leading-relaxed text-bg/80">{last.nextFocus.detail}</p>
+            </div>
+          )}
+        </div>
+      </FocusShell>
+    );
+  }
+
+  const { stats } = await computeWeeklyStats(db, user.id, today, plan, week.weekStart);
   const rows: [string, string][] = [
     ["Lessons completed", `${stats.lessonsCompleted}/${stats.lessonsTarget}`],
     ["Missions completed", `${stats.actionsCompleted}/${stats.actionsTarget}`],
@@ -31,7 +54,7 @@ export default async function WeeklyReviewPage() {
     <FocusShell top={<p className="text-[13px] text-muted">Weekly review</p>}>
       <div className="pt-4">
         <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
-          {formatDay(stats.weekStart)} – {formatDay(stats.weekEnd)}
+          Week {week.index} · {formatDay(stats.weekStart)} – {formatDay(stats.weekEnd)}
         </p>
         <h1 className="mt-2 font-display text-[40px] leading-none">Your week</h1>
 

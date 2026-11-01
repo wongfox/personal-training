@@ -166,6 +166,20 @@ export const passwordResetTokens = pgTable(
   (t) => [index("password_reset_user_idx").on(t.userId)],
 );
 
+export const emailVerificationTokens = pgTable(
+  "email_verification_tokens",
+  {
+    id: text("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("email_verification_user_idx").on(t.userId)],
+);
+
 export const rateLimits = pgTable("rate_limits", {
   key: text("key").primaryKey(),
   count: integer("count").notNull().default(0),
@@ -460,6 +474,8 @@ export const growthPlans = pgTable(
       .notNull()
       .references(() => goals.id),
     journeyId: uuid("journey_id").references(() => journeys.id, { onDelete: "set null" }),
+    /** Ordered journey ids for the whole plan: primary goal first, then secondary goals, then the rest. */
+    roadmap: jsonb("roadmap").$type<string[]>().notNull().default([]),
     level: difficulty("level").notNull(),
     dailyMinutes: integer("daily_minutes").notNull(),
     frequency: planFrequency("frequency").notNull(),
@@ -546,6 +562,26 @@ export const quizAttempts = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("quiz_attempts_user_idx").on(t.userId)],
+);
+
+/**
+ * The first answer a learner checks for each knowledge-check question. Instant
+ * per-question feedback reveals the right answer, so the score always uses
+ * this locked first answer.
+ */
+export const quizAnswerChecks = pgTable(
+  "quiz_answer_checks",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    questionId: uuid("question_id")
+      .notNull()
+      .references(() => quizQuestions.id, { onDelete: "cascade" }),
+    answer: integer("answer").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.questionId] })],
 );
 
 export const dailyActionAttempts = pgTable(

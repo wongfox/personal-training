@@ -150,3 +150,8 @@ export function baselineScore(selfRating: number | undefined, level: "beginner" 
   const rating = selfRating ?? 3;
   return Math.max(5, Math.min(70, levelBase + (rating - 3) * 6));
 }
+
+/** Exercise XP scales with quality: showing up earns something, doing it well earns the full amount. */
+export function scaledXp(base: number, score: number): number {
+  return Math.max(10, Math.round(base * (0.4 + 0.6 * Math.max(0, Math.min(100, score)) / 100)));
+}

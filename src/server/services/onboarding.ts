@@ -19,7 +19,7 @@ import {
 } from "@/server/db/schema";
 import { SELF_RATINGS } from "@/server/db/seed/base";
 import { baselineScore, XP } from "@/server/engine/progression";
-import { buildPlan, type OnboardingAnswers } from "@/server/engine/plan";
+import { buildPlan, buildRoadmap, type OnboardingAnswers } from "@/server/engine/plan";
 import { ValidationError } from "@/server/errors";
 import { recordActivity } from "./rewards";
 
@@ -141,6 +141,7 @@ export async function completeOnboarding(
       title: draft.title,
       primaryGoalId: goalId.get(draft.primaryGoal)!,
       journeyId: draft.journey?.id ?? null,
+      roadmap: buildRoadmap(draft.primaryGoal, draft.secondaryGoals, journeyRows),
       level: draft.level,
       dailyMinutes: draft.dailyMinutes,
       frequency: draft.frequency,

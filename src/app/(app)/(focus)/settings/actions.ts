@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { isValidTimeZone } from "@/lib/dates";
 import { requireUser } from "@/server/auth/current-user";
+import { rateLimit } from "@/server/auth/rate-limit";
 import { getDb } from "@/server/db";
 import { profiles, userSettings, users } from "@/server/db/schema";
 
@@ -27,6 +28,14 @@ export async function saveSettings(input: SettingsInput): Promise<{ error?: stri
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid settings." };
   const v = parsed.data;
   const db = getDb();
+  // Training days are counted in this timezone, so it can't be used to skip ahead
+  // to tomorrow's lesson or to rescue a streak: one change per week.
+  if (v.timezone !== user.timezone) {
+    const limit = await rateLimit(db, `timezone:${user.id}`, 1, 7 * 24 * 3600);
+    if (!limit.allowed) {
+      return { error: `You can change your timezone once a week. Try again in ${Math.ceil(limit.retryAfterSeconds / 86400)} day(s).` };
+    }
+  }
   await db.transaction(async (tx) => {
     await tx.update(profiles).set({ displayName: v.displayName, timezone: v.timezone }).where(eq(profiles.userId, user.id));
     await tx.update(users).set({ name: v.displayName }).where(eq(users.id, user.id));

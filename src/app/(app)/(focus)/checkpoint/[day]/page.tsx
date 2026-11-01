@@ -27,7 +27,7 @@ export default async function CheckpointPage({ params }: PageProps<"/checkpoint/
       <FocusShell footer={<ButtonLink href="/home">Back to today</ButtonLink>}>
         <div className="pt-16 text-center">
           <h1 className="font-display text-[32px]">Day {day} isn&apos;t here yet.</h1>
-          <p className="mt-3 text-ink-2">Keep training — your checkpoint opens on day {day + 1} of your plan.</p>
+          <p className="mt-3 text-ink-2">Keep training — it opens once you&apos;ve completed {day} days of your plan.</p>
         </div>
       </FocusShell>
     );

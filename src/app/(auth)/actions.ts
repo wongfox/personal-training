@@ -11,7 +11,7 @@ import { rateLimit } from "@/server/auth/rate-limit";
 import { createSession, invalidateSession, invalidateUserSessions } from "@/server/auth/sessions";
 import { getDb } from "@/server/db";
 import { appUrl, audit, sendEmail, track } from "@/server/platform";
-import { authenticate, createPasswordReset, registerUser, resetPassword } from "@/server/services/accounts";
+import { authenticate, createEmailVerification, createPasswordReset, registerUser, resetPassword } from "@/server/services/accounts";
 import {
   fieldErrors,
   forgotPasswordSchema,
@@ -55,7 +55,27 @@ export async function registerAction(_prev: FormState, formData: FormData): Prom
   await setSessionCookie(session.token, session.expiresAt);
   await audit(db, { actorId: result.userId, action: "auth.register", entityType: "user", entityId: result.userId, ipAddress: meta.ipAddress });
   await track(db, result.userId, "onboarding_started");
+  await sendVerificationEmail(result.userId, parsed.data.email, parsed.data.name);
   redirect("/onboarding");
+}
+
+async function sendVerificationEmail(userId: string, email: string, name: string) {
+  const token = await createEmailVerification(getDb(), userId);
+  await sendEmail({
+    to: email,
+    subject: "Confirm your email for Personal Growth OS",
+    text: `Hi ${name},\n\nConfirm this is your address (the link is valid for 3 days):\n${appUrl(`/api/auth/verify-email?token=${encodeURIComponent(token)}`)}\n\nIf you didn't create an account, ignore this email.`,
+  });
+}
+
+export async function resendVerificationAction(): Promise<{ ok?: string; error?: string }> {
+  const session = await getSession();
+  if (!session) return { error: "Sign in first." };
+  const db = getDb();
+  const limit = await rateLimit(db, `verify-resend:${session.user.id}`, 3, 3600);
+  if (!limit.allowed) return { error: "We've sent a few already — check your inbox and spam folder." };
+  await sendVerificationEmail(session.user.id, session.user.email, session.user.name);
+  return { ok: "Sent. Check your inbox." };
 }
 
 export async function loginAction(_prev: FormState, formData: FormData): Promise<FormState> {

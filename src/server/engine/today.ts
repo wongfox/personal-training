@@ -27,9 +27,12 @@ export function resolveToday(
   orderedLessonIds: string[],
   progress: Map<string, LessonProgressRef>,
   today: ISODate,
+  opts: { doneElsewhereToday?: boolean } = {},
 ): TodayResolution {
   const states = new Map<string, LessonState>();
-  const doneToday = orderedLessonIds.find((id) => progress.get(id)?.completedOn === today) ?? null;
+  const doneHere = orderedLessonIds.find((id) => progress.get(id)?.completedOn === today) ?? null;
+  // One lesson a day across the whole plan, not per journey.
+  const doneToday = doneHere ?? (opts.doneElsewhereToday ? "elsewhere" : null);
   const firstIncomplete = orderedLessonIds.find((id) => progress.get(id)?.status !== "completed") ?? null;
 
   for (const id of orderedLessonIds) {
@@ -40,7 +43,7 @@ export function resolveToday(
 
   return {
     todayLessonId: doneToday ? null : firstIncomplete,
-    doneTodayLessonId: doneToday,
+    doneTodayLessonId: doneHere,
     nextLessonId: firstIncomplete,
     journeyComplete: orderedLessonIds.length > 0 && firstIncomplete === null,
     states,

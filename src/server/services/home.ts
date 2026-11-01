@@ -28,13 +28,27 @@ export async function dueCheckpoint(db: Executor, userId: string, dayNumber: num
   return null;
 }
 
+/**
+ * Plan weeks are fixed 7-day blocks counted from the plan's start. A week can
+ * be reviewed once it has fully elapsed (from its 7th day on), exactly once.
+ */
+export function reviewableWeek(startDate: ISODate, today: ISODate): { index: number; weekStart: ISODate; nextOpensOn: ISODate } {
+  const completedWeeks = Math.floor((diffDays(startDate, today) + 1) / 7);
+  return {
+    index: completedWeeks,
+    weekStart: addDays(startDate, Math.max(0, completedWeeks - 1) * 7),
+    nextOpensOn: addDays(startDate, completedWeeks * 7 + 6),
+  };
+}
+
 export async function weeklyReviewDue(db: Executor, userId: string, today: ISODate, startDate: ISODate): Promise<boolean> {
-  if (diffDays(startDate, today) < 6) return false;
-  const recent = await db
+  const week = reviewableWeek(startDate, today);
+  if (week.index < 1) return false;
+  const [done] = await db
     .select({ id: weeklyReviews.id })
     .from(weeklyReviews)
-    .where(and(eq(weeklyReviews.userId, userId), gte(weeklyReviews.weekStart, addDays(today, -12))));
-  return recent.length === 0;
+    .where(and(eq(weeklyReviews.userId, userId), gte(weeklyReviews.weekStart, week.weekStart)));
+  return !done;
 }
 
 export async function getHomeData(db: Executor, userId: string, today: ISODate) {

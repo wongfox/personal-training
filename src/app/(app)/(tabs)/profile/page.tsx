@@ -1,10 +1,10 @@
-import { Award, ChevronRight, Lock, LogOut, Settings, Shield } from "lucide-react";
+import { Award, ChevronRight, Lock, Settings, Shield } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { logoutAction } from "@/app/(auth)/actions";
 import { StreakBadge } from "@/components/progress-widgets";
 import { InstallButton } from "@/components/pwa/install-button";
+import { SignOutButton } from "@/components/sign-out-button";
 import { Sparkline } from "@/components/sparkline";
 import { Card, ProgressBar, SectionTitle } from "@/components/ui/primitives";
 import { cn } from "@/lib/cn";
@@ -14,7 +14,7 @@ import { can } from "@/server/auth/rbac";
 import { getDb } from "@/server/db";
 import { FREQUENCY_LABEL } from "@/server/engine/plan";
 import { getProfileData, listWeeklyReviews } from "@/server/services/progress";
-import { getActivePlan, getJourneyOutline } from "@/server/services/training";
+import { getActivePlan } from "@/server/services/training";
 
 export const metadata: Metadata = { title: "Profile" };
 
@@ -24,11 +24,10 @@ export default async function ProfilePage() {
   const today = localDate(user.timezone);
   const plan = await getActivePlan(db, user.id);
   if (!plan) redirect("/onboarding");
-  const [data, outline, reviews] = await Promise.all([
-    getProfileData(db, user.id, today),
-    plan.journeyId ? getJourneyOutline(db, user.id, plan.journeyId, today) : null,
-    listWeeklyReviews(db, user.id),
-  ]);
+  const [data, reviews] = await Promise.all([getProfileData(db, user.id, today), listWeeklyReviews(db, user.id)]);
+  const earnedCount = data.achievements.filter((a) => a.earnedAt).length;
+  // Earned badges plus the next three to aim for — not a wall of locks.
+  const shownAchievements = [...data.achievements.filter((a) => a.earnedAt), ...data.achievements.filter((a) => !a.earnedAt).slice(0, 3)];
   const initials = user.name.split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
   const overall = data.skills.length ? Math.round(data.skills.reduce((s, k) => s + k.score, 0) / data.skills.length) : 0;
   const overallBaseline = data.skills.length ? Math.round(data.skills.reduce((s, k) => s + k.baseline, 0) / data.skills.length) : 0;
@@ -113,15 +112,12 @@ export default async function ProfilePage() {
         </SectionTitle>
         <dl className="grid grid-cols-3 gap-2.5">
           {[
-            ["Days trained", data.totals.daysTrained],
+            ["Days trained", `${data.totals.daysTrained} · best streak ${data.streak.longest}`],
             ["Lessons", data.totals.lessons],
             ["Exercises", data.totals.exercises],
             ["Missions", data.totals.actions],
             ["Reflections", data.totals.reflections],
             ["Minutes", data.totals.minutes],
-            ["Current streak", data.streak.current],
-            ["Best streak", data.streak.longest],
-            ["Journey", outline ? `${outline.percent}%` : "—"],
           ].map(([k, v]) => (
             <div key={k} className="rounded-2xl bg-surface p-3.5 shadow-card">
               <dt className="text-[11px] text-muted">{k}</dt>
@@ -148,11 +144,11 @@ export default async function ProfilePage() {
 
       {/* Achievements */}
       <section aria-labelledby="ach-title">
-        <SectionTitle>
+        <SectionTitle action={<span className="text-[12px] text-muted">{earnedCount} of {data.achievements.length}</span>}>
           <span id="ach-title">Achievements</span>
         </SectionTitle>
         <ul className="grid grid-cols-3 gap-2.5">
-          {data.achievements.map((a) => (
+          {shownAchievements.map((a) => (
             <li
               key={a.key}
               title={a.description}
@@ -177,7 +173,7 @@ export default async function ProfilePage() {
           <p className="text-[14px] text-ink-2">Your training history will show up here.</p>
         ) : (
           <ul className="divide-y divide-line rounded-3xl bg-surface px-5 shadow-card">
-            {data.history.map((h, i) => (
+            {data.history.slice(0, 6).map((h, i) => (
               <li key={i} className="flex items-center justify-between py-3 text-[14px]">
                 <span>
                   {h.label} <span className="text-muted">· {formatDay(h.day)}</span>
@@ -199,11 +195,7 @@ export default async function ProfilePage() {
         <InstallButton />
         <NavRow href="/settings" icon={<Settings size={18} />} label="Settings & notifications" />
         {can(user.roles, "admin:access") && <NavRow href="/admin" icon={<Shield size={18} />} label="Admin panel" />}
-        <form action={logoutAction}>
-          <button type="submit" className="flex w-full items-center gap-3 rounded-2xl px-4 py-3.5 text-[15px] text-danger hover:bg-danger-soft">
-            <LogOut size={18} /> Sign out
-          </button>
-        </form>
+        <SignOutButton />
       </section>
     </div>
   );

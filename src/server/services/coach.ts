@@ -151,8 +151,27 @@ const PRACTICE_HINTS: { pattern: RegExp; slugHint: string; label: string }[] = [
  * retrieves the most relevant frameworks and lessons and frames them around
  * the learner's plan. Clearly limited, but useful and honest.
  */
+/** Everyday words → the vocabulary the library uses, so "rambling" finds "bottom line up front". */
+const SYNONYMS: Record<string, string[]> = {
+  ramble: ["concise", "bottom", "point", "first", "brief", "short"],
+  rambling: ["concise", "bottom", "point", "first", "brief", "short"],
+  waffle: ["concise", "bottom", "point", "first"],
+  nervous: ["nerves", "confidence", "calm", "pressure", "routine"],
+  anxious: ["nerves", "confidence", "calm", "pressure"],
+  shy: ["conversation", "approach", "start", "confidence"],
+  confident: ["confidence", "authority", "hedge", "hedges", "certain"],
+  sound: ["voice", "hedge", "authority", "tone"],
+  introduce: ["introduction", "line", "yourself", "brand"],
+  pitch: ["presentation", "opening", "audience", "story"],
+  objection: ["pushback", "disagree", "interests", "negotiate"],
+  meeting: ["meetings", "decision", "agenda", "speak"],
+  forget: ["memory", "remember", "names", "recall"],
+  decide: ["decision", "criteria", "options", "pre-mortem"],
+};
+
 export async function playbookReply(db: Executor, question: string, ctx: CoachContext): Promise<string> {
-  const words = new Set(contentWords(question));
+  const base = contentWords(question);
+  const words = new Set([...base, ...base.flatMap((w) => SYNONYMS[w] ?? [])]);
   const [library, lessonRows, tools] = await Promise.all([
     db.select({ slug: resources.slug, title: resources.title, description: resources.description, body: resources.body, category: resources.category }).from(resources).where(eq(resources.status, "published")),
     db.select({ title: lessons.title, content: lessons.content, category: lessons.category }).from(lessons).where(eq(lessons.status, "published")),
@@ -182,6 +201,8 @@ export async function playbookReply(db: Executor, question: string, ctx: CoachCo
   const hint = PRACTICE_HINTS.find((h) => h.pattern.test(question));
   const tool = hint ? tools.find((t) => t.slug.includes(hint.slugHint)) : null;
   if (tool) parts.push(`Then rehearse it: open **${tool.title}** in Practice and do one rep before the real moment.`);
-  parts.push(`Keep it tied to your plan: your focus is ${ctx.primarySkill.toLowerCase()}${ctx.journeyTitle ? `, and today's training in ${ctx.journeyTitle} builds exactly this` : ""}.`);
+  if (bestLesson && bestLesson.s > 0) {
+    parts.push(`This comes from the lesson **${bestLesson.l.title}** — if it's in your plan you'll meet it there; either way, try the idea once today.`);
+  }
   return parts.join("\n\n");
 }

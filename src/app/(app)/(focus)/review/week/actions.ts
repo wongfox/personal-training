@@ -5,6 +5,7 @@ import { localDate } from "@/lib/dates";
 import { requireUser } from "@/server/auth/current-user";
 import { getDb } from "@/server/db";
 import type { NextFocus } from "@/server/db/types";
+import { AppError } from "@/server/errors";
 import { track } from "@/server/platform";
 import { saveWeeklyReview } from "@/server/services/progress";
 import { getActivePlan } from "@/server/services/training";
@@ -21,7 +22,13 @@ export async function submitWeeklyReview(_prev: WeeklyState, formData: FormData)
   const plan = await getActivePlan(db, user.id);
   if (!plan) return { error: "No active plan." };
   const reflection = String(formData.get("reflection") ?? "").slice(0, 2000);
-  const result = await db.transaction((tx) => saveWeeklyReview(tx, user.id, localDate(user.timezone), plan, reflection));
+  let result;
+  try {
+    result = await db.transaction((tx) => saveWeeklyReview(tx, user.id, localDate(user.timezone), plan, reflection));
+  } catch (e) {
+    if (e instanceof AppError) return { error: e.message };
+    throw e;
+  }
   await track(db, user.id, "weekly_review_completed");
   if (reflection.trim()) await track(db, user.id, "reflection_completed", { kind: "weekly" });
   revalidatePath("/home");

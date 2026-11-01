@@ -11,8 +11,8 @@ const body = z.object({ whatHappened: answer, whatWorked: answer, whatToImprove:
 export const POST = apiHandler<{ attemptId: string }>(async ({ user, today, request }, { attemptId }) => {
   const input = await readJson(request, body);
   const db = getDb();
-  const reward = await db.transaction((tx) => saveMissionReflection(tx, user.id, today, attemptId, input));
+  const result = await db.transaction((tx) => saveMissionReflection(tx, user.id, today, attemptId, input));
   await track(db, user.id, "reflection_completed", { kind: "action", attemptId });
-  await trackRewardEvents(db, user.id, reward);
-  return { reward };
+  await trackRewardEvents(db, user.id, result.reward);
+  return result;
 });

@@ -9,7 +9,8 @@ import { requireUser } from "@/server/auth/current-user";
 import { getDb } from "@/server/db";
 import type { OutlineModule } from "@/server/services/training";
 import { getActivePlan, getJourneyOutline } from "@/server/services/training";
-import { listJourneys } from "@/server/services/catalog";
+import { getRoadmapView, listJourneys } from "@/server/services/catalog";
+import { RoadmapTimeline } from "@/components/roadmap";
 import { SwitchJourneyButton } from "./switch-journey";
 
 export const metadata: Metadata = { title: "Journey" };
@@ -20,9 +21,10 @@ export default async function JourneyPage() {
   const today = localDate(user.timezone);
   const plan = await getActivePlan(db, user.id);
   if (!plan) redirect("/onboarding");
-  const [outline, journeys] = await Promise.all([
+  const [outline, journeys, roadmap] = await Promise.all([
     plan.journeyId ? getJourneyOutline(db, user.id, plan.journeyId, today) : null,
     listJourneys(db, user.id),
+    getRoadmapView(db, user.id, plan),
   ]);
 
   return (
@@ -57,6 +59,18 @@ export default async function JourneyPage() {
           <p className="mt-2 text-ink-2">Pick a path to start your daily training.</p>
         </header>
       )}
+
+      <section aria-labelledby="roadmap-title">
+        <SectionTitle>
+          <span id="roadmap-title">Your {plan.durationDays}-day roadmap</span>
+        </SectionTitle>
+        <Card>
+          <RoadmapTimeline stages={roadmap.stages} planWeeks={roadmap.planWeeks} lastWeek={roadmap.lastWeek} />
+          <p className="mt-5 border-t border-line pt-4 text-[13px] text-ink-2">
+            When you finish a journey, the next one starts automatically. You can also switch below.
+          </p>
+        </Card>
+      </section>
 
       <section id="journeys" aria-labelledby="all-journeys">
         <SectionTitle>

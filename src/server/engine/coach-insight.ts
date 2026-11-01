@@ -163,3 +163,43 @@ export function buildCoachInsight(s: InsightSignals): CoachInsight {
     recommendation: s.next ? `Raise the difficulty a notch. Next up: “${s.next.title}”.` : "Try a harder practice scenario this week to stretch the skill.",
   };
 }
+
+export interface ReflectionFeedback {
+  headline: string;
+  observation: string;
+  nextStep: string;
+}
+
+function quote(text: string, max = 110): string {
+  const t = text.trim().replace(/\s+/g, " ").replace(/[.!]+$/, "");
+  return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t;
+}
+
+/**
+ * Immediate, specific feedback on a mission reflection, written from the
+ * learner's own words: what to keep, what to change, and the next rep.
+ */
+export function reflectionFeedback(input: {
+  outcome: "difficult" | "normal" | "good" | "excellent" | null;
+  answers: { whatHappened?: string; whatWorked?: string; whatToImprove?: string; whatLearned?: string };
+  next: { title: string } | null;
+}): ReflectionFeedback {
+  const { outcome, answers: a, next } = input;
+  const all = [a.whatHappened, a.whatWorked, a.whatToImprove, a.whatLearned].filter(Boolean).join(" ");
+  const hesitated = HESITATION.test(all);
+
+  const headline =
+    outcome === "excellent" ? "That's a new baseline." : outcome === "good" ? "It landed." : outcome === "difficult" ? "Hard reps count double." : "A clean rep.";
+
+  const parts: string[] = [];
+  if (hesitated && (outcome === "good" || outcome === "excellent")) parts.push("You felt the hesitation and did it anyway — that's exactly the muscle this builds.");
+  else if (hesitated) parts.push("The nerves showed up. That's normal at this stage; what matters is that you started.");
+  if (a.whatWorked?.trim()) parts.push(`Keep this: “${quote(a.whatWorked)}”. Name it, so you can repeat it on purpose.`);
+  if (!parts.length) parts.push(outcome === "difficult" ? "Difficult usually means you were at the edge of your skill — the right place to practise." : "Doing it is what turns an idea into a habit.");
+
+  const nextStep = a.whatToImprove?.trim()
+    ? `Next time, change one thing: “${quote(a.whatToImprove)}”. Decide now where you'll try it.${next ? ` Tomorrow's lesson: “${next.title}”.` : ""}`
+    : `Before tomorrow, pick one thing you'd do differently — it's the fastest way to improve.${next ? ` Next lesson: “${next.title}”.` : ""}`;
+
+  return { headline, observation: parts.join(" "), nextStep };
+}

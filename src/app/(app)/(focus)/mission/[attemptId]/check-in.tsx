@@ -8,6 +8,7 @@ import { Button, ButtonLink } from "@/components/ui/button";
 import { FormAlert } from "@/components/ui/field";
 import { postJSON } from "@/lib/api-client";
 import { cn } from "@/lib/cn";
+import type { ReflectionFeedback } from "@/server/engine/coach-insight";
 import type { getMission } from "@/server/services/learning";
 
 type Mission = Awaited<ReturnType<typeof getMission>>;
@@ -41,6 +42,7 @@ export function MissionCheckIn({ mission }: { mission: Mission }) {
   const [outcome, setOutcome] = useState<Outcome | null>(mission.outcome);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [xp, setXp] = useState(0);
+  const [feedback, setFeedback] = useState<ReflectionFeedback | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,8 +65,9 @@ export function MissionCheckIn({ mission }: { mission: Mission }) {
     setBusy(true);
     setError(null);
     try {
-      const res = await postJSON<{ reward: { xp: number } }>(`/api/missions/${mission.id}/reflection`, answers);
+      const res = await postJSON<{ reward: { xp: number }; feedback: ReflectionFeedback }>(`/api/missions/${mission.id}/reflection`, answers);
       setXp((x) => x + (res.reward?.xp ?? 0));
+      setFeedback(res.feedback);
       setStage("complete");
       router.refresh();
     } catch (e) {
@@ -191,6 +194,14 @@ export function MissionCheckIn({ mission }: { mission: Mission }) {
             <p className="mx-auto mt-2 max-w-xs text-[15px] text-ink-2">
               {xp ? `+${xp} XP. ` : ""}Learn → practise → apply → reflect. That&apos;s the whole loop — and you just closed it.
             </p>
+            {feedback && (
+              <div className="mt-8 rounded-3xl border-l-[3px] border-accent bg-surface p-5 text-left shadow-card">
+                <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-accent">Coach&apos;s note</p>
+                <p className="mt-2 font-display text-[22px] leading-snug">{feedback.headline}</p>
+                <p className="mt-2 text-[15px] leading-relaxed">{feedback.observation}</p>
+                <p className="mt-3 text-[14px] leading-relaxed text-ink-2">{feedback.nextStep}</p>
+              </div>
+            )}
           </section>
         )}
       </div>

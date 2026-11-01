@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { RoadmapTimeline } from "@/components/roadmap";
 import { ButtonLink } from "@/components/ui/button";
+import { getRoadmapView } from "@/server/services/catalog";
 import { localDate } from "@/lib/dates";
 import { requireUser } from "@/server/auth/current-user";
 import { getDb } from "@/server/db";
@@ -14,7 +16,10 @@ export default async function PlanRevealPage() {
   const db = getDb();
   const plan = await getActivePlan(db, user.id);
   if (!plan) redirect("/home");
-  const outline = plan.journeyId ? await getJourneyOutline(db, user.id, plan.journeyId, localDate(user.timezone)) : null;
+  const [outline, roadmap] = await Promise.all([
+    plan.journeyId ? getJourneyOutline(db, user.id, plan.journeyId, localDate(user.timezone)) : null,
+    getRoadmapView(db, user.id, plan),
+  ]);
 
   const rows: [string, string][] = [
     ["Daily commitment", `${plan.dailyMinutes} minutes`],
@@ -49,20 +54,20 @@ export default async function PlanRevealPage() {
           ))}
         </dl>
 
-        {outline && (
-          <section className="mt-3 rounded-2xl bg-surface p-5 shadow-card animate-rise [animation-delay:280ms]">
-            <p className="text-[12px] text-muted">Your first journey</p>
-            <p className="mt-1 text-[18px] font-semibold">{outline.journey.title}</p>
-            <p className="mt-1 text-[14px] text-ink-2">
-              {outline.modules.length} modules · {outline.total} lessons
+        <section className="mt-3 rounded-2xl bg-surface p-5 shadow-card animate-rise [animation-delay:280ms]">
+          <div className="flex items-baseline justify-between">
+            <p className="text-[15px] font-semibold">Your roadmap</p>
+            <p className="text-[12px] text-muted">{roadmap.totalLessons} lessons · {roadmap.planWeeks} weeks</p>
+          </div>
+          <div className="mt-4">
+            <RoadmapTimeline stages={roadmap.stages} planWeeks={roadmap.planWeeks} lastWeek={roadmap.lastWeek} />
+          </div>
+          {outline?.todayLesson && (
+            <p className="mt-5 border-t border-line pt-4 text-[14px] text-ink-2">
+              Day 1: <span className="font-medium text-ink">{outline.todayLesson.title}</span>
             </p>
-            {outline.todayLesson && (
-              <p className="mt-4 border-t border-line pt-4 text-[14px] text-ink-2">
-                Day 1: <span className="font-medium text-ink">{outline.todayLesson.title}</span>
-              </p>
-            )}
-          </section>
-        )}
+          )}
+        </section>
 
         {plan.ninetyDayGoal && (
           <blockquote className="mt-6 border-l-2 border-accent pl-4 animate-rise [animation-delay:360ms]">

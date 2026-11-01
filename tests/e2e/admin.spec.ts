@@ -4,13 +4,12 @@ const SHOTS = "test-results/screens";
 
 test("a super admin manages users and content", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 860 });
-  // admin@e2e.test is bootstrapped as SUPER_ADMIN by SUPER_ADMIN_EMAILS (see scripts/e2e-server.mjs).
-  await page.goto("/register");
-  await page.getByLabel("First name").fill("Root");
+  // admin@e2e.test is created as a verified SUPER_ADMIN by `admin:create` (see scripts/e2e-server.mjs).
+  await page.goto("/login");
   await page.getByLabel("Email").fill("admin@e2e.test");
   await page.getByLabel("Password").fill("a long enough password");
-  await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page).toHaveURL(/\/onboarding/);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/(home|onboarding)/);
 
   await page.goto("/admin");
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();

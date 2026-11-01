@@ -22,7 +22,7 @@ export default async function AdminDashboard() {
         <>
           <section aria-label="Key metrics" className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <Kpi label="Registered users" value={metrics.registered} note={`${metrics.onboarded} with a plan`} />
-            <Kpi label="DAU / WAU / MAU" value={`${metrics.dau} / ${metrics.wau} / ${metrics.mau}`} note="distinct active learners" />
+            <Kpi label="DAU / WAU / MAU" value={`${metrics.dau} / ${metrics.wau} / ${metrics.mau}`} note="active learners (staff excluded)" />
             <Kpi label="Lessons completed" value={metrics.lessonsCompleted} note={`${metrics.lessonsThisWeek} this week`} />
             <Kpi label="Completion rate" value={`${metrics.completionRate}%`} note="lessons finished once started" />
             <Kpi label="Average streak" value={metrics.averageStreak} note="days, all learners" />
@@ -32,7 +32,7 @@ export default async function AdminDashboard() {
               note={metrics.retention.cohort ? `${metrics.retention.retained} of ${metrics.retention.cohort} sign-ups` : "no 7-day cohort yet"}
             />
             <Kpi label="Active journeys" value={metrics.activeJourneys.reduce((s, j) => s + j.n, 0)} note={`${metrics.activeJourneys.length} programmes`} />
-            <Kpi label="Active (WAU/registered)" value={metrics.registered ? `${Math.round((metrics.wau / metrics.registered) * 100)}%` : "—"} note="weekly engagement" />
+            <Kpi label="Weekly engagement" value={metrics.learners ? `${Math.round((metrics.wau / metrics.learners) * 100)}%` : "—"} note="WAU ÷ learners with a plan" />
           </section>
 
           <div className="mt-6 grid gap-4 lg:grid-cols-2">

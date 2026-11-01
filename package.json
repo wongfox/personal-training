@@ -15,7 +15,8 @@
     "db:migrate": "tsx --env-file-if-exists=.env.local scripts/db.ts migrate",
     "db:seed": "tsx --env-file-if-exists=.env.local scripts/db.ts seed",
     "db:setup": "tsx --env-file-if-exists=.env.local scripts/db.ts setup",
-    "admin:grant": "tsx --env-file-if-exists=.env.local scripts/db.ts grant"
+    "admin:grant": "tsx --env-file-if-exists=.env.local scripts/db.ts grant",
+    "admin:create": "tsx --env-file-if-exists=.env.local scripts/db.ts create-admin"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",

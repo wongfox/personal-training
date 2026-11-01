@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Wordmark } from "@/components/brand";
+import { ClearLocalDataOnMount } from "@/components/sign-out-button";
 
 export default function AuthLayout({ children }: LayoutProps<"/">) {
   return (
@@ -10,6 +11,7 @@ export default function AuthLayout({ children }: LayoutProps<"/">) {
         </Link>
       </header>
       <main className="flex flex-1 flex-col pt-6 animate-rise">{children}</main>
+      <ClearLocalDataOnMount />
     </div>
   );
 }

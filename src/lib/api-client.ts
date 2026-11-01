@@ -12,6 +12,32 @@ interface QueuedRequest {
   url: string;
   body: unknown;
   queuedAt: number;
+  /** Whose progress this is — a shared device never replays someone else's work. */
+  userId: string | null;
+}
+
+let currentUserId: string | null = null;
+
+/** Called by the signed-in shell so queued writes are tagged with their owner. */
+export function setOutboxUser(userId: string | null) {
+  currentUserId = userId;
+}
+
+/** Forgets everything stored on this device for the signed-in user (sign-out, account switch). */
+export async function clearLocalData(): Promise<void> {
+  try {
+    localStorage.removeItem(OUTBOX_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+  try {
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((k) => k.startsWith("pgos-pages")).map((k) => caches.delete(k)));
+    }
+  } catch {
+    /* cache storage unavailable */
+  }
 }
 
 export class ApiError extends Error {
@@ -54,7 +80,7 @@ export async function postJSON<T>(url: string, body: unknown, opts: { queueOffli
     });
   } catch {
     if (opts.queueOffline) {
-      writeOutbox([...readOutbox(), { url, body, queuedAt: Date.now() }]);
+      writeOutbox([...readOutbox(), { url, body, queuedAt: Date.now(), userId: currentUserId }]);
       return { queued: true } as T;
     }
     throw new ApiError("You're offline. Check your connection and try again.", 0);
@@ -75,10 +101,21 @@ export async function flushOutbox(): Promise<number> {
     let queue = readOutbox();
     while (queue.length > 0) {
       const [head, ...rest] = queue;
+      if (head.userId !== currentUserId) {
+        // Queued by a different account on this device: drop it, never replay it.
+        queue = rest;
+        writeOutbox(queue);
+        continue;
+      }
       try {
         const res = await fetch(head.url, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "X-Offline-Replay": "1" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-Offline-Replay": "1",
+            // When it actually happened, so an offline lesson counts on the right day.
+            "X-Occurred-At": new Date(head.queuedAt).toISOString(),
+          },
           body: JSON.stringify(head.body),
           credentials: "same-origin",
         });
