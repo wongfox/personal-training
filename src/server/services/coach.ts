@@ -167,6 +167,12 @@ const SYNONYMS: Record<string, string[]> = {
   meeting: ["meetings", "decision", "agenda", "speak"],
   forget: ["memory", "remember", "names", "recall"],
   decide: ["decision", "criteria", "options", "pre-mortem"],
+  freeze: ["nerves", "pause", "pressure", "calm", "answer", "hard", "blank"],
+  froze: ["nerves", "pause", "pressure", "calm", "answer", "hard", "blank"],
+  blank: ["nerves", "pause", "pressure", "answer", "hard"],
+  boss: ["senior", "executive", "leadership", "manager"],
+  question: ["answer", "hard"],
+  questions: ["answer", "hard"],
 };
 
 export async function playbookReply(db: Executor, question: string, ctx: CoachContext): Promise<string> {
@@ -177,7 +183,18 @@ export async function playbookReply(db: Executor, question: string, ctx: CoachCo
     db.select({ title: lessons.title, content: lessons.content, category: lessons.category }).from(lessons).where(eq(lessons.status, "published")),
     db.select({ slug: exercises.slug, title: exercises.title }).from(exercises).where(and(eq(exercises.isPractice, true), eq(exercises.status, "published"))),
   ]);
-  const score = (text: string) => contentWords(text).filter((w) => words.has(w)).length;
+  // TF-IDF-style relevance: a word that appears in almost every lesson ("meeting",
+  // "question") says little; rarer shared words ("freeze", "pushback") decide the match.
+  const docs = [
+    ...library.map((r) => contentWords(`${r.title} ${r.description} ${r.body}`)),
+    ...lessonRows.map((l) => contentWords(`${l.title} ${l.content.coreConcept.title} ${l.content.coreConcept.keyPoints.join(" ")} ${l.content.hook}`)),
+  ];
+  const df = new Map<string, number>();
+  for (const d of docs) for (const w of new Set(d)) df.set(w, (df.get(w) ?? 0) + 1);
+  const idf = (w: string) => Math.log((docs.length + 1) / ((df.get(w) ?? 0) + 1));
+  const direct = new Set(base);
+  const score = (text: string) =>
+    [...new Set(contentWords(text))].filter((w) => words.has(w)).reduce((s, w) => s + idf(w) * (direct.has(w) ? 1.5 : 1), 0);
 
   const bestResource = library
     .map((r) => ({ r, s: score(`${r.title} ${r.title} ${r.description} ${r.body}`) }))
@@ -187,7 +204,7 @@ export async function playbookReply(db: Executor, question: string, ctx: CoachCo
     .sort((a, b) => b.s - a.s)[0];
 
   const parts: string[] = [];
-  if (bestLesson && bestLesson.s > 0) {
+  if (bestLesson && bestLesson.s > 1) {
     const c = bestLesson.l.content;
     parts.push(`Here's how I'd approach it, ${ctx.firstName}. The core idea is **${c.coreConcept.title.replace(/\.$/, "")}**:`);
     parts.push(c.coreConcept.keyPoints.map((k) => `- ${k}`).join("\n"));
@@ -195,13 +212,13 @@ export async function playbookReply(db: Executor, question: string, ctx: CoachCo
   } else {
     parts.push(`Good question, ${ctx.firstName}. Start with the one thing you want the other person to remember, say it in your first sentence, then give a single reason and a concrete example.`);
   }
-  if (bestResource && bestResource.s > 1) {
+  if (bestResource && bestResource.s > 3) {
     parts.push(`Go deeper with **${bestResource.r.title}** (${categoryName(bestResource.r.category)}) in Explore: ${bestResource.r.description}`);
   }
   const hint = PRACTICE_HINTS.find((h) => h.pattern.test(question));
   const tool = hint ? tools.find((t) => t.slug.includes(hint.slugHint)) : null;
   if (tool) parts.push(`Then rehearse it: open **${tool.title}** in Practice and do one rep before the real moment.`);
-  if (bestLesson && bestLesson.s > 0) {
+  if (bestLesson && bestLesson.s > 1) {
     parts.push(`This comes from the lesson **${bestLesson.l.title}** — if it's in your plan you'll meet it there; either way, try the idea once today.`);
   }
   return parts.join("\n\n");

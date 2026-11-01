@@ -29,10 +29,10 @@ export default async function WeeklyReviewPage() {
           <h1 className="mt-2 font-display text-[34px] leading-tight">Your next review opens {formatDay(week.nextOpensOn, { weekday: "long", month: "short", day: "numeric" })}.</h1>
           <p className="mt-3 text-[15px] text-ink-2">Each plan week is reviewed once, after its seventh day.</p>
           {last && (
-            <div className="mt-8 rounded-3xl bg-ink p-6 text-bg">
-              <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-bg/60">This week&apos;s focus</p>
+            <div className="mt-8 rounded-3xl bg-hero p-6 text-hero-ink">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-hero-ink/60">This week&apos;s focus</p>
               <p className="mt-2 font-display text-[26px] leading-tight">{last.nextFocus.headline}</p>
-              <p className="mt-3 text-[15px] leading-relaxed text-bg/80">{last.nextFocus.detail}</p>
+              <p className="mt-3 text-[15px] leading-relaxed text-hero-ink/80">{last.nextFocus.detail}</p>
             </div>
           )}
         </div>

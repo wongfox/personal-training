@@ -8,7 +8,8 @@ import {
   setSessionCookie,
 } from "@/server/auth/current-user";
 import { rateLimit } from "@/server/auth/rate-limit";
-import { createSession, invalidateSession, invalidateUserSessions } from "@/server/auth/sessions";
+import { can } from "@/server/auth/rbac";
+import { createSession, invalidateSession, invalidateUserSessions, validateSessionToken } from "@/server/auth/sessions";
 import { getDb } from "@/server/db";
 import { appUrl, audit, sendEmail, track } from "@/server/platform";
 import { authenticate, createEmailVerification, createPasswordReset, registerUser, resetPassword } from "@/server/services/accounts";
@@ -88,7 +89,8 @@ export async function loginAction(_prev: FormState, formData: FormData): Promise
   const meta = await getRequestMeta();
   const [byIp, byAccount] = await Promise.all([
     rateLimit(db, `login-ip:${meta.ipAddress ?? "unknown"}`, 30, 900),
-    rateLimit(db, `login:${parsed.data.email}`, 8, 900),
+    // Per account *and* network: a stranger hammering your email can't lock you out from yours.
+    rateLimit(db, `login:${parsed.data.email}:${meta.ipAddress ?? "unknown"}`, 8, 900),
   ]);
   if (!byIp.allowed || !byAccount.allowed) {
     return { error: `Too many attempts. Try again in ${Math.ceil(Math.max(byIp.retryAfterSeconds, byAccount.retryAfterSeconds) / 60)} minutes.`, values: keep };
@@ -105,6 +107,9 @@ export async function loginAction(_prev: FormState, formData: FormData): Promise
   const session = await createSession(db, result.userId, meta);
   await setSessionCookie(session.token, session.expiresAt);
   await audit(db, { actorId: result.userId, action: "auth.login", entityType: "user", entityId: result.userId, metadata: { method: "password" }, ipAddress: meta.ipAddress });
+  // Staff who never trained (e.g. an operator-created admin) land in the back office, not onboarding.
+  const signedIn = await validateSessionToken(db, session.token);
+  if (signedIn && !signedIn.user.onboarded && can(signedIn.user.roles, "admin:access")) redirect("/admin");
   redirect("/home");
 }
 

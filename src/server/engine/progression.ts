@@ -63,7 +63,7 @@ export interface StreakState {
   lastActiveDate: ISODate | null;
 }
 
-export type StreakEvent = "same_day" | "started" | "continued" | "restarted";
+export type StreakEvent = "same_day" | "past" | "started" | "continued" | "restarted";
 
 /** Applies one training day. `restarted` means a previous streak was lost. */
 export function applyTrainingDay(
@@ -71,6 +71,9 @@ export function applyTrainingDay(
   today: ISODate,
 ): StreakState & { event: StreakEvent; lost: number } {
   if (prev.lastActiveDate === today) return { ...prev, event: "same_day", lost: 0 };
+  // A late-arriving activity for an earlier day (e.g. another device's offline queue)
+  // never rewinds or resets the streak.
+  if (prev.lastActiveDate && today < prev.lastActiveDate) return { ...prev, event: "past", lost: 0 };
   if (prev.lastActiveDate && diffDays(prev.lastActiveDate, today) === 1) {
     const current = prev.current + 1;
     return { current, longest: Math.max(prev.longest, current), lastActiveDate: today, event: "continued", lost: 0 };

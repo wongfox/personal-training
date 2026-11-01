@@ -65,19 +65,19 @@ export default async function HomePage() {
         </div>
 
         {todayLesson ? (
-          <div className="relative overflow-hidden rounded-[28px] bg-ink p-6 text-bg">
+          <div className="relative overflow-hidden rounded-[28px] bg-hero p-6 text-hero-ink">
             <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-accent/25 blur-3xl" aria-hidden />
-            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-bg/60">Today&apos;s training</p>
+            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-hero-ink/60">Today&apos;s training</p>
             <div className="mt-4 flex flex-wrap gap-2">
-              <span className="rounded-full bg-bg/10 px-2.5 py-1 text-[12px] font-medium">{categoryName(todayLesson.category)}</span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-bg/10 px-2.5 py-1 text-[12px] font-medium">
+              <span className="rounded-full bg-hero-ink/10 px-2.5 py-1 text-[12px] font-medium">{categoryName(todayLesson.category)}</span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-hero-ink/10 px-2.5 py-1 text-[12px] font-medium">
                 <Clock size={12} /> {todayLesson.estimatedMinutes} min
               </span>
             </div>
             <h2 id="today-title" className="mt-3 font-display text-[30px] leading-[1.08]">
               {todayLesson.title}
             </h2>
-            <p className="mt-2 text-[14px] text-bg/70">{todayLesson.moduleTitle}</p>
+            <p className="mt-2 text-[14px] text-hero-ink/70">{todayLesson.moduleTitle}</p>
             <ButtonLink href={`/lesson/${todayLesson.id}`} variant="accent" className="mt-6">
               {todayLesson.started ? "Continue training" : "Start today's training"}
               <ArrowRight size={18} />
@@ -100,6 +100,20 @@ export default async function HomePage() {
               </p>
             )}
           </Card>
+        ) : data.masteryRep ? (
+          <div className="relative overflow-hidden rounded-[28px] bg-hero p-6 text-hero-ink">
+            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-hero-ink/60">Mastery block · today&apos;s rep</p>
+            <h2 id="today-title" className="mt-3 font-display text-[30px] leading-[1.08]">
+              {data.masteryRep.title.includes(":") ? data.masteryRep.title.split(":").slice(1).join(":").trim() : data.masteryRep.title}
+            </h2>
+            <p className="mt-2 text-[14px] text-hero-ink/70">
+              {data.masteryRep.title.split(":")[0]} · {data.masteryRep.estimatedMinutes} min
+            </p>
+            <ButtonLink href={`/practice/${data.masteryRep.slug}`} variant="accent" className="mt-6">
+              Start today&apos;s rep
+              <ArrowRight size={18} />
+            </ButtonLink>
+          </div>
         ) : data.journeyComplete ? (
           <Card className="p-6">
             <p className="font-display text-[26px]">Journey complete.</p>
@@ -199,7 +213,7 @@ export default async function HomePage() {
       {/* Weekly progress */}
       <section aria-labelledby="week-title" className="animate-rise [animation-delay:200ms]">
         <SectionTitle>
-          <span id="week-title">This week</span>
+          <span id="week-title">Week {data.week.number} of your plan</span>
         </SectionTitle>
         <Card>
           <WeekStrip monday={data.week.monday} days={data.week.days} today={today} />

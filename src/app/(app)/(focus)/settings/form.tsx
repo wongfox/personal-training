@@ -110,7 +110,7 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
-        className={cn("relative h-7 w-12 rounded-full transition-colors", checked ? "bg-ink" : "bg-surface-2")}
+        className={cn("relative h-7 w-12 rounded-full ring-1 transition-colors", checked ? "bg-ink ring-ink" : "bg-muted/35 ring-muted/50")}
       >
         <span className={cn("absolute top-0.5 h-6 w-6 rounded-full bg-bg shadow transition-[left]", checked ? "left-[22px]" : "left-0.5")} />
       </button>

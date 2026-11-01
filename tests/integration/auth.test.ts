@@ -64,7 +64,7 @@ describe("accounts and sessions", () => {
     expect((await validateSessionToken(db, token))?.user.roles).not.toContain("SUPER_ADMIN");
     const verification = await createEmailVerification(db, reg.userId);
     expect(await verifyEmail(db, "not-a-real-token-xxxxxxxxxxxxxxx")).toBeNull();
-    expect(await verifyEmail(db, verification)).toBe(reg.userId);
+    expect(await verifyEmail(db, verification)).toEqual({ userId: reg.userId, bootstrapped: true });
     expect(await verifyEmail(db, verification)).toBeNull(); // single use
     expect((await validateSessionToken(db, token))?.user.roles).toEqual(expect.arrayContaining(["USER", "SUPER_ADMIN"]));
     await grantRole(db, reg.userId, "COACH");

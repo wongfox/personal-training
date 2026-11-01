@@ -74,22 +74,25 @@ export interface RoadmapStage {
   lessons: number;
   completed: number;
   status: "done" | "current" | "upcoming";
-  fromWeek: number;
-  toWeek: number;
+  /** Plan days covered (1-based, non-overlapping). */
+  fromDay: number;
+  toDay: number;
 }
 
-/** Spreads the journeys across plan weeks at the learner's training rhythm. */
-export function scheduleRoadmap(
-  stages: Omit<RoadmapStage, "fromWeek" | "toWeek">[],
-  lessonsPerWeek: number,
-): RoadmapStage[] {
+/**
+ * Lays the journeys out on the plan's calendar at the learner's rhythm
+ * (e.g. 5 lessons a week means each lesson takes 7/5 calendar days).
+ */
+export function scheduleRoadmap(stages: Omit<RoadmapStage, "fromDay" | "toDay">[], lessonsPerWeek: number): RoadmapStage[] {
+  const daysPerLesson = 7 / lessonsPerWeek;
   let cursor = 0;
+  let lastDay = 0;
   return stages.map((s) => {
-    const remaining = s.lessons;
-    const fromWeek = Math.floor(cursor / lessonsPerWeek) + 1;
-    cursor += remaining;
-    const toWeek = Math.max(fromWeek, Math.ceil(cursor / lessonsPerWeek));
-    return { ...s, fromWeek, toWeek };
+    cursor += s.lessons;
+    const fromDay = lastDay + 1;
+    const toDay = Math.max(fromDay, Math.ceil(cursor * daysPerLesson));
+    lastDay = toDay;
+    return { ...s, fromDay, toDay };
   });
 }
 

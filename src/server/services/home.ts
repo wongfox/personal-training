@@ -4,6 +4,7 @@ import type { Executor } from "@/server/db";
 import { assessments, profiles, weeklyReviews } from "@/server/db/schema";
 import { FREQUENCY_DAYS } from "@/server/engine/plan";
 import { levelForXp } from "@/server/engine/progression";
+import { masteryRepFor } from "./catalog";
 import { getCoachInsight } from "./insights";
 import {
   countDueReviews,
@@ -58,7 +59,7 @@ export async function getHomeData(db: Executor, userId: string, today: ISODate) 
   const [outline, streak, week, dueReviews, openMissions, [profile]] = await Promise.all([
     plan.journeyId ? getJourneyOutline(db, userId, plan.journeyId, today) : Promise.resolve(null),
     getStreak(db, userId, today),
-    getWeek(db, userId, today),
+    getWeek(db, userId, today, plan.startDate),
     countDueReviews(db, userId, today),
     getOpenMissions(db, userId),
     db.select({ totalXp: profiles.totalXp }).from(profiles).where(eq(profiles.userId, userId)),
@@ -70,6 +71,9 @@ export async function getHomeData(db: Executor, userId: string, today: ISODate) 
   const missionPreview = todayLesson ? await getMissionForLesson(db, todayLesson.id) : null;
   const todaysMission = openMissions.find((m) => m.actionDate === today) ?? (await getMissionOn(db, userId, today));
   const pendingMission = openMissions.find((m) => m.actionDate < today && m.status !== "not_yet") ?? openMissions.find((m) => m.actionDate < today) ?? null;
+
+  // Every journey done: the mastery block serves one practice rep a day.
+  const masteryRep = !todayLesson && !doneLesson && outline?.journeyComplete ? await masteryRepFor(db, plan.primarySkill.key, dayNumber) : null;
 
   const [insight, checkpoint, weeklyDue] = await Promise.all([
     getCoachInsight(db, userId, today, plan, outline, streak.current),
@@ -85,6 +89,7 @@ export async function getHomeData(db: Executor, userId: string, today: ISODate) 
     doneLesson,
     nextLesson: outline?.nextLesson ?? null,
     journeyComplete: outline?.journeyComplete ?? false,
+    masteryRep,
     missionPreview,
     todaysMission,
     pendingMission,

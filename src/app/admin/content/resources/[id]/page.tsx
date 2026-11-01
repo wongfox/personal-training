@@ -6,7 +6,7 @@ import { getDb } from "@/server/db";
 import { NotFoundError } from "@/server/errors";
 import { getResourceAdmin } from "@/server/services/admin";
 import { uuidSchema } from "@/server/validation";
-import { PageHeader, Panel, StatusBadge } from "../../../ui";
+import { isLiveLocked, LiveNotice, PageHeader, Panel, StatusBadge } from "../../../ui";
 import { ResourceForm } from "../../library-forms";
 
 export const metadata: Metadata = { title: "Resource" };
@@ -29,7 +29,11 @@ export default async function ResourceAdminPage({ params }: PageProps<"/admin/co
         crumbs={[{ href: "/admin/content", label: "Content" }, { href: "/admin/content/resources", label: "Explore library" }]}
         action={<StatusBadge status={resource.status} />}
       />
-      <Panel>{can(user.roles, "content:write") ? <ResourceForm resource={resource} canPublish={can(user.roles, "content:publish")} /> : <p>Read-only.</p>}</Panel>
+      {can(user.roles, "content:write") && isLiveLocked(can(user.roles, "content:publish"), resource.status) ? (
+        <LiveNotice />
+      ) : (
+        <Panel>{can(user.roles, "content:write") ? <ResourceForm resource={resource} canPublish={can(user.roles, "content:publish")} /> : <p>Read-only.</p>}</Panel>
+      )}
     </div>
   );
 }

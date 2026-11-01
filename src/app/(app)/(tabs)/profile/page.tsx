@@ -85,6 +85,11 @@ export default async function ProfilePage() {
               {overall > overallBaseline ? <span className="font-semibold text-success">+{overall - overallBaseline}</span> : "±0"} since day 1
             </p>
           </div>
+          {data.skills.every((s) => s.score === s.baseline) && (
+            <p className="mt-3 text-[13px] leading-relaxed text-muted">
+              Your baseline, from your self-assessment. Every lesson, mission and practice rep moves these.
+            </p>
+          )}
           <ul className="mt-2 divide-y divide-line">
             {data.skills.map((s) => (
               <li key={s.key} className="flex items-center gap-3 py-3">
@@ -112,7 +117,7 @@ export default async function ProfilePage() {
         </SectionTitle>
         <dl className="grid grid-cols-3 gap-2.5">
           {[
-            ["Days trained", `${data.totals.daysTrained} · best streak ${data.streak.longest}`],
+            ["Days trained", data.totals.daysTrained],
             ["Lessons", data.totals.lessons],
             ["Exercises", data.totals.exercises],
             ["Missions", data.totals.actions],
@@ -125,6 +130,9 @@ export default async function ProfilePage() {
             </div>
           ))}
         </dl>
+        <p className="mt-2.5 text-[13px] text-muted">
+          Best streak: <span className="font-medium text-ink-2">{data.streak.longest} day{data.streak.longest === 1 ? "" : "s"}</span>
+        </p>
       </section>
 
       {/* Plan & goals */}

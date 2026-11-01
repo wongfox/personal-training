@@ -1,8 +1,8 @@
 /**
  * Read models for the learner's plan, journey and today's training.
  */
-import { and, asc, desc, eq, inArray, isNotNull, lte, ne, notInArray, sql } from "drizzle-orm";
-import { addDays, type ISODate, startOfWeek } from "@/lib/dates";
+import { and, asc, desc, eq, gt, inArray, isNotNull, lte, ne, or, sql } from "drizzle-orm";
+import { addDays, diffDays, type ISODate, localDate, startOfWeek } from "@/lib/dates";
 import type { Executor } from "@/server/db";
 import {
   dailyActionAttempts,
@@ -16,6 +16,7 @@ import {
   reviewItems,
   skills,
   streaks,
+  users,
   userGoals,
   xpTransactions,
 } from "@/server/db/schema";
@@ -84,6 +85,9 @@ export interface OutlineModule {
   completed: number;
 }
 
+/** Minimum rest between two lessons, whatever the calendar says. */
+export const MIN_GAP_HOURS = 8;
+
 export async function getJourneyOutline(db: Executor, userId: string, journeyId: string, today: ISODate) {
   const [journey] = await db.select().from(journeys).where(eq(journeys.id, journeyId));
   if (!journey) return null;
@@ -121,9 +125,11 @@ export async function getJourneyOutline(db: Executor, userId: string, journeyId:
         .where(and(eq(lessonProgress.userId, userId), inArray(lessonProgress.lessonId, ids)))
     : [];
   const progress = new Map<string, LessonProgressRef>(progressRows.map((p) => [p.lessonId, p]));
-  // A lesson already finished today in another journey (e.g. the one just completed) still counts as today's.
+  // Today's lesson is already "used" if one was finished today in another journey, or less
+  // than MIN_GAP hours ago (a timezone change or late-night finish can't unlock two in a row).
   const [elsewhere] = await db
     .select({
+      completedOn: lessonProgress.completedOn,
       id: lessons.id,
       slug: lessons.slug,
       title: lessons.title,
@@ -135,7 +141,16 @@ export async function getJourneyOutline(db: Executor, userId: string, journeyId:
     .from(lessonProgress)
     .innerJoin(lessons, eq(lessons.id, lessonProgress.lessonId))
     .innerJoin(journeyModules, eq(journeyModules.id, lessons.moduleId))
-    .where(and(eq(lessonProgress.userId, userId), eq(lessonProgress.completedOn, today), ne(journeyModules.journeyId, journeyId)))
+    .where(
+      and(
+        eq(lessonProgress.userId, userId),
+        eq(lessonProgress.status, "completed"),
+        or(
+          and(eq(lessonProgress.completedOn, today), ne(journeyModules.journeyId, journeyId)),
+          and(gt(lessonProgress.completedAt, new Date(Date.now() - MIN_GAP_HOURS * 3600_000)), ne(lessonProgress.completedOn, today)),
+        ),
+      ),
+    )
     .limit(1);
   const resolution = resolveToday(ids, progress, today, { doneElsewhereToday: Boolean(elsewhere) });
 
@@ -191,7 +206,7 @@ export async function trainingDays(db: Executor, userId: string, from: ISODate, 
       and(
         eq(xpTransactions.userId, userId),
         sql`${xpTransactions.activityDate} between ${from} and ${to}`,
-        notInArray(xpTransactions.reason, ["onboarding_completed", "achievement_earned", "weekly_review_completed", "checkpoint_completed"]),
+        eq(xpTransactions.countsAsTraining, true),
       ),
     );
   return rows.map((r) => r.day).sort();
@@ -203,11 +218,13 @@ export async function getStreak(db: Executor, userId: string, today: ISODate) {
   return { ...visibleStreak(state, today), longest: state.longest, trainedToday: state.lastActiveDate === today };
 }
 
-export async function getWeek(db: Executor, userId: string, today: ISODate) {
-  const monday = startOfWeek(today);
+/** The current plan week: 7-day blocks from the plan's start (same weeks as the weekly review). */
+export async function getWeek(db: Executor, userId: string, today: ISODate, planStart?: ISODate) {
+  const index = planStart ? Math.max(0, Math.floor(diffDays(planStart, today) / 7)) : 0;
+  const monday = planStart ? addDays(planStart, index * 7) : startOfWeek(today);
   const sunday = addDays(monday, 6);
   const days = await trainingDays(db, userId, monday, sunday);
-  return { monday, sunday, days, count: days.length };
+  return { monday, sunday, days, count: days.length, number: index + 1 };
 }
 
 export async function countDueReviews(db: Executor, userId: string, today: ISODate): Promise<number> {
@@ -264,4 +281,27 @@ export async function getMissionOn(db: Executor, userId: string, day: ISODate) {
 export async function getMissionForLesson(db: Executor, lessonId: string) {
   const [row] = await db.select().from(dailyActions).where(and(eq(dailyActions.lessonId, lessonId), eq(dailyActions.status, "published")));
   return row ?? null;
+}
+
+/**
+ * The day a replayed offline write counts for. The client says when it
+ * happened; the server only accepts "yesterday" at the earliest, and never a
+ * day before the learner's last recorded training day, plan start or account
+ * creation — so replays can preserve an honest offline day but can't backfill
+ * a missed one, unlock extra lessons or rewind a streak.
+ */
+export async function replayDay(db: Executor, userId: string, timezone: string, occurredAt: Date, now = new Date()): Promise<ISODate> {
+  const today = localDate(timezone, now);
+  const claimed = localDate(timezone, occurredAt);
+  if (claimed >= today) return today;
+  const [row] = await db
+    .select({ lastActive: streaks.lastActiveDate, createdAt: users.createdAt, planStart: growthPlans.startDate })
+    .from(users)
+    .leftJoin(streaks, eq(streaks.userId, users.id))
+    .leftJoin(growthPlans, and(eq(growthPlans.userId, users.id), eq(growthPlans.status, "active")))
+    .where(eq(users.id, userId))
+    .limit(1);
+  const floors = [addDays(today, -1), row?.lastActive, row?.planStart, row ? localDate(timezone, row.createdAt) : null].filter(Boolean) as ISODate[];
+  const floor = floors.reduce((a, b) => (a > b ? a : b));
+  return claimed < floor ? floor : claimed;
 }

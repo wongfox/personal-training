@@ -4,6 +4,7 @@
  */
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type { Executor } from "@/server/db";
+import { categorySkill } from "@/lib/taxonomy";
 import { FREQUENCY_DAYS, type Frequency, type RoadmapStage, scheduleRoadmap } from "@/server/engine/plan";
 import { planRoadmap } from "./learning";
 import {
@@ -125,6 +126,22 @@ export async function getRoadmapView(
     return { id: j.id, title: j.title, lessons, completed, status };
   });
   const scheduled = scheduleRoadmap(stages.filter((s) => s.lessons > 0), FREQUENCY_DAYS[plan.frequency]);
-  const planWeeks = Math.ceil(plan.durationDays / 7);
-  return { stages: scheduled, planWeeks, lastWeek: scheduled.at(-1)?.toWeek ?? 0, totalLessons: scheduled.reduce((s, x) => s + x.lessons, 0) };
+  return { stages: scheduled, planDays: plan.durationDays, lastDay: scheduled.at(-1)?.toDay ?? 0, totalLessons: scheduled.reduce((s, x) => s + x.lessons, 0) };
+}
+
+/**
+ * Mastery block: once every journey in the roadmap is done, each day gets one
+ * concrete practice rep, rotating through tools that train the plan's focus first.
+ */
+export async function masteryRepFor(db: Executor, primarySkillKey: string, dayNumber: number) {
+  const tools = await db
+    .select({ slug: exercises.slug, title: exercises.title, category: exercises.category, estimatedMinutes: exercises.estimatedMinutes })
+    .from(exercises)
+    .where(and(eq(exercises.isPractice, true), eq(exercises.status, "published")))
+    .orderBy(asc(exercises.order));
+  if (tools.length === 0) return null;
+  const focus = tools.filter((t) => categorySkill(t.category) === primarySkillKey);
+  // Two days on the focus skill, one on everything else.
+  const pool = focus.length && dayNumber % 3 !== 0 ? focus : tools;
+  return pool[dayNumber % pool.length];
 }

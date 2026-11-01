@@ -9,7 +9,7 @@ import { getJourneyAdmin } from "@/server/services/admin";
 import { uuidSchema } from "@/server/validation";
 import { saveJourneyAction, saveModuleAction } from "../../../actions";
 import { AdminForm } from "../../../form";
-import { Input, MetaFields, PageHeader, Panel, StatusBadge, Table } from "../../../ui";
+import { Input, isLiveLocked, LiveNotice, MetaFields, PageHeader, Panel, StatusBadge, Table } from "../../../ui";
 
 export const metadata: Metadata = { title: "Journey" };
 
@@ -55,13 +55,17 @@ export default async function JourneyAdminPage({ params }: PageProps<"/admin/con
 
       {canWrite && (
         <div className="grid gap-6 lg:grid-cols-2">
-          <Panel>
-            <h2 className="mb-4 text-[15px] font-semibold">Edit journey</h2>
-            <AdminForm action={saveJourneyAction} hidden={{ id: journey.id }}>
-              <MetaFields values={journey} canPublish={canPublish} minutes={{ min: 1, max: 1000 }} />
-              <Input label="Subtitle" name="subtitle" defaultValue={journey.subtitle ?? ""} />
-            </AdminForm>
-          </Panel>
+          {isLiveLocked(canPublish, journey.status) ? (
+            <LiveNotice />
+          ) : (
+            <Panel>
+              <h2 className="mb-4 text-[15px] font-semibold">Edit journey</h2>
+              <AdminForm action={saveJourneyAction} hidden={{ id: journey.id }}>
+                <MetaFields values={journey} canPublish={canPublish} minutes={{ min: 1, max: 1000 }} />
+                <Input label="Subtitle" name="subtitle" defaultValue={journey.subtitle ?? ""} />
+              </AdminForm>
+            </Panel>
+          )}
           <Panel>
             <h2 className="mb-4 text-[15px] font-semibold">Add a module</h2>
             <AdminForm action={saveModuleAction} hidden={{ journeyId: journey.id }} submitLabel="Add module">

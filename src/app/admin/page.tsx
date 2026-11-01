@@ -31,7 +31,7 @@ export default async function AdminDashboard() {
               value={metrics.retention.cohort ? `${Math.round((metrics.retention.retained / metrics.retention.cohort) * 100)}%` : "—"}
               note={metrics.retention.cohort ? `${metrics.retention.retained} of ${metrics.retention.cohort} sign-ups` : "no 7-day cohort yet"}
             />
-            <Kpi label="Active journeys" value={metrics.activeJourneys.reduce((s, j) => s + j.n, 0)} note={`${metrics.activeJourneys.length} programmes`} />
+            <Kpi label="Learners in a journey" value={metrics.activeJourneys.reduce((s, j) => s + j.n, 0)} note={`across ${metrics.activeJourneys.length} active journey${metrics.activeJourneys.length === 1 ? "" : "s"}`} />
             <Kpi label="Weekly engagement" value={metrics.learners ? `${Math.round((metrics.wau / metrics.learners) * 100)}%` : "—"} note="WAU ÷ learners with a plan" />
           </section>
 

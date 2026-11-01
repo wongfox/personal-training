@@ -170,6 +170,12 @@ export interface ReflectionFeedback {
   nextStep: string;
 }
 
+/** Only quote the learner back when they actually said something. */
+function meaningful(text: string | undefined): text is string {
+  // At least three different real words — "ok", "fine", "ok ok ok" don't qualify.
+  return Boolean(text) && new Set((text!.toLowerCase().match(/[a-z']{2,}/g) ?? [])).size >= 3;
+}
+
 function quote(text: string, max = 110): string {
   const t = text.trim().replace(/\s+/g, " ").replace(/[.!]+$/, "");
   return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t;
@@ -194,10 +200,12 @@ export function reflectionFeedback(input: {
   const parts: string[] = [];
   if (hesitated && (outcome === "good" || outcome === "excellent")) parts.push("You felt the hesitation and did it anyway — that's exactly the muscle this builds.");
   else if (hesitated) parts.push("The nerves showed up. That's normal at this stage; what matters is that you started.");
-  if (a.whatWorked?.trim()) parts.push(`Keep this: “${quote(a.whatWorked)}”. Name it, so you can repeat it on purpose.`);
+  if (meaningful(a.whatWorked)) parts.push(`Keep this: “${quote(a.whatWorked)}”. Name it, so you can repeat it on purpose.`);
   if (!parts.length) parts.push(outcome === "difficult" ? "Difficult usually means you were at the edge of your skill — the right place to practise." : "Doing it is what turns an idea into a habit.");
 
-  const nextStep = a.whatToImprove?.trim()
+  const thin = ![a.whatHappened, a.whatWorked, a.whatToImprove, a.whatLearned].some(meaningful);
+  if (thin) parts.unshift("A few more words would make this reflection useful — what exactly did you say, and how did they react?");
+  const nextStep = meaningful(a.whatToImprove)
     ? `Next time, change one thing: “${quote(a.whatToImprove)}”. Decide now where you'll try it.${next ? ` Tomorrow's lesson: “${next.title}”.` : ""}`
     : `Before tomorrow, pick one thing you'd do differently — it's the fastest way to improve.${next ? ` Next lesson: “${next.title}”.` : ""}`;
 

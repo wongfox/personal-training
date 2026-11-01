@@ -65,7 +65,7 @@ export default async function JourneyPage() {
           <span id="roadmap-title">Your {plan.durationDays}-day roadmap</span>
         </SectionTitle>
         <Card>
-          <RoadmapTimeline stages={roadmap.stages} planWeeks={roadmap.planWeeks} lastWeek={roadmap.lastWeek} />
+          <RoadmapTimeline stages={roadmap.stages} planDays={roadmap.planDays} lastDay={roadmap.lastDay} />
           <p className="mt-5 border-t border-line pt-4 text-[13px] text-ink-2">
             When you finish a journey, the next one starts automatically. You can also switch below.
           </p>

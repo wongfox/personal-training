@@ -33,7 +33,13 @@ export async function clearLocalData(): Promise<void> {
   try {
     if ("caches" in window) {
       const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => k.startsWith("pgos-pages")).map((k) => caches.delete(k)));
+      // Drop the signed-in pages but keep the generic offline fallback page.
+      for (const key of keys.filter((k) => k.startsWith("pgos-pages"))) {
+        const cache = await caches.open(key);
+        for (const req of await cache.keys()) {
+          if (!new URL(req.url).pathname.startsWith("/offline")) await cache.delete(req);
+        }
+      }
     }
   } catch {
     /* cache storage unavailable */
@@ -119,7 +125,9 @@ export async function flushOutbox(): Promise<number> {
           body: JSON.stringify(head.body),
           credentials: "same-origin",
         });
-        // 4xx means the server rejected it for good (e.g. already done) — drop it.
+        // Signed out or session expired: keep the work and retry after sign-in.
+        if (res.status === 401 || res.status === 403) break;
+        // Other 4xx means the server rejected it for good (e.g. already done) — drop it.
         if (res.status >= 500) break;
       } catch {
         break;

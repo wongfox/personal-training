@@ -9,7 +9,8 @@ test("a super admin manages users and content", async ({ page }) => {
   await page.getByLabel("Email").fill("admin@e2e.test");
   await page.getByLabel("Password").fill("a long enough password");
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/(home|onboarding)/);
+  // Staff who never onboarded land straight in the back office.
+  await expect(page).toHaveURL(/\/admin$/);
 
   await page.goto("/admin");
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();

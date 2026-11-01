@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
 import { addDays } from "@/lib/dates";
 import type { DB } from "@/server/db";
-import { exercises, quizQuestions, reviewItems, userJourneys, userSkills } from "@/server/db/schema";
+import { exercises, lessonProgress, quizQuestions, reviewItems, userJourneys, userSkills } from "@/server/db/schema";
 import type { ExerciseConfig } from "@/server/db/types";
 import { NotFoundError, ValidationError } from "@/server/errors";
 import { getHomeData } from "@/server/services/home";
@@ -16,7 +16,7 @@ import {
   submitExercise,
   submitQuiz,
 } from "@/server/services/learning";
-import { createLearner, setupDatabase } from "./helpers";
+import { createLearner, finishLesson, setupDatabase } from "./helpers";
 
 const DAY1 = "2026-03-02";
 const DAY2 = addDays(DAY1, 1);
@@ -133,7 +133,8 @@ describe("the daily training loop", () => {
     expect(refl.feedback.observation).toContain("They opened up");
     expect(refl.feedback.nextStep).toContain(second.title);
 
-    // Next day: the next lesson opens, reviews are due, the streak continues.
+    // Next day (and 8h+ later): the next lesson opens, reviews are due, the streak continues.
+    await db.update(lessonProgress).set({ completedAt: new Date(Date.now() - 9 * 3600_000) }).where(eq(lessonProgress.userId, userId));
     const day2 = (await getHomeData(db, userId, DAY2))!;
     expect(day2.todayLesson?.id).toBe(second.id);
     expect(day2.dueReviews).toBeGreaterThan(0);
@@ -145,7 +146,8 @@ describe("the daily training loop", () => {
     const review = await db.transaction((tx) => answerReview(tx, userId, DAY2, item.id, q.correctIndex));
     expect(review.correct).toBe(true);
     expect(review.nextDueOn).toBe(addDays(DAY2, 3));
-    expect(review.reward.streak.current).toBe(2);
+    // A single spaced review earns XP but isn't a training day: the streak needs real training.
+    expect(review.reward.streak.current).toBe(1);
     await expect(db.transaction((tx) => answerReview(tx, userId, DAY2, item.id, 0))).rejects.toBeInstanceOf(ValidationError);
   });
 
@@ -153,7 +155,7 @@ describe("the daily training loop", () => {
     const a = await createLearner(DAY1);
     const b = await createLearner(DAY1);
     const homeA = (await getHomeData(db, a.userId, DAY1))!;
-    const done = await db.transaction((tx) => completeLesson(tx, a.userId, DAY1, homeA.todayLesson!.id, {}));
+    const done = await finishLesson(db, a.userId, DAY1, homeA.todayLesson!.id);
     await expect(
       db.transaction((tx) => checkInMission(tx, b.userId, DAY1, done.missionAttemptId!, { status: "done", outcome: "good" })),
     ).rejects.toBeInstanceOf(NotFoundError);

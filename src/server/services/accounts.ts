@@ -50,8 +50,10 @@ function superAdminEmails(): string[] {
  * the account holder (email link or a Google-verified address) — otherwise
  * anyone could claim admin by registering that email first.
  */
-async function applyBootstrapRoles(db: Executor, userId: string, email: string) {
-  if (superAdminEmails().includes(email.toLowerCase())) await grantRole(db, userId, "SUPER_ADMIN");
+async function applyBootstrapRoles(db: Executor, userId: string, email: string): Promise<boolean> {
+  if (!superAdminEmails().includes(email.toLowerCase())) return false;
+  await grantRole(db, userId, "SUPER_ADMIN");
+  return true;
 }
 
 /** Profile, settings, streak row and base role for a brand-new account. */
@@ -72,7 +74,7 @@ export async function createEmailVerification(db: Executor, userId: string): Pro
 }
 
 /** Marks the email as verified (single-use token) and applies bootstrap roles. Returns the user id. */
-export async function verifyEmail(db: Executor, token: string): Promise<string | null> {
+export async function verifyEmail(db: Executor, token: string): Promise<{ userId: string; bootstrapped: boolean } | null> {
   const [row] = await db
     .select()
     .from(emailVerificationTokens)
@@ -80,8 +82,8 @@ export async function verifyEmail(db: Executor, token: string): Promise<string |
   if (!row) return null;
   const [user] = await db.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.id, row.userId)).returning({ id: users.id, email: users.email });
   await db.update(emailVerificationTokens).set({ usedAt: new Date() }).where(and(eq(emailVerificationTokens.userId, row.userId), isNull(emailVerificationTokens.usedAt)));
-  if (user) await applyBootstrapRoles(db, user.id, user.email);
-  return row.userId;
+  const bootstrapped = user ? await applyBootstrapRoles(db, user.id, user.email) : false;
+  return { userId: row.userId, bootstrapped };
 }
 
 /** Operator bootstrap (CLI): a verified account with the given role. */

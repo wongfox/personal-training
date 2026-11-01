@@ -146,3 +146,19 @@ export function MetaFields({
     </div>
   );
 }
+
+/** Live (published/archived) content is read-only for anyone who can't publish. */
+export function isLiveLocked(canPublish: boolean, status: string): boolean {
+  return !canPublish && (status === "published" || status === "archived");
+}
+
+export function LiveNotice() {
+  return (
+    <Panel className="border-accent/30 bg-accent-soft/40">
+      <p className="text-[15px] font-semibold">This is live — read-only for your role.</p>
+      <p className="mt-1 text-[14px] text-ink-2">
+        Learners are using it right now. Ask an admin to move it back to Review if it needs changes.
+      </p>
+    </Panel>
+  );
+}

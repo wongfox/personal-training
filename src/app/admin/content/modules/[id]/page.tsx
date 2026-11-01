@@ -9,7 +9,7 @@ import { getModuleAdmin } from "@/server/services/admin";
 import { uuidSchema } from "@/server/validation";
 import { saveModuleAction } from "../../../actions";
 import { AdminForm } from "../../../form";
-import { MetaFields, PageHeader, Panel, StatusBadge, Table } from "../../../ui";
+import { isLiveLocked, LiveNotice, MetaFields, PageHeader, Panel, StatusBadge, Table } from "../../../ui";
 
 export const metadata: Metadata = { title: "Module" };
 
@@ -64,7 +64,8 @@ export default async function ModuleAdminPage({ params }: PageProps<"/admin/cont
           </tr>
         ))}
       </Table>
-      {canWrite && (
+      {canWrite && isLiveLocked(can(user.roles, "content:publish"), mod.status) && <LiveNotice />}
+      {canWrite && !isLiveLocked(can(user.roles, "content:publish"), mod.status) && (
         <Panel className="max-w-3xl">
           <h2 className="mb-4 text-[15px] font-semibold">Edit module</h2>
           <AdminForm action={saveModuleAction} hidden={{ id: mod.id, journeyId: journey.id }}>

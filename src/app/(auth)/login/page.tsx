@@ -16,8 +16,8 @@ const ERRORS: Record<string, string> = {
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   if (await getCurrentUser()) redirect("/home");
-  const { error } = await searchParams;
-  const notice = typeof error === "string" ? ERRORS[error] : undefined;
+  const { error, verified } = await searchParams;
+  const notice = typeof error === "string" ? ERRORS[error] : verified === "1" ? "Email confirmed. Sign in to continue." : undefined;
 
   return (
     <>

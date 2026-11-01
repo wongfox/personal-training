@@ -6,7 +6,7 @@ import { getDb } from "@/server/db";
 import { NotFoundError } from "@/server/errors";
 import { getLessonAdmin } from "@/server/services/admin";
 import { uuidSchema } from "@/server/validation";
-import { PageHeader, StatusBadge } from "../../../ui";
+import { isLiveLocked, LiveNotice, PageHeader, StatusBadge } from "../../../ui";
 import { LessonForm } from "../lesson-form";
 
 export const metadata: Metadata = { title: "Lesson" };
@@ -35,7 +35,9 @@ export default async function LessonAdminPage({ params }: PageProps<"/admin/cont
         ]}
         action={<StatusBadge status={data.lesson.status} />}
       />
-      {canWrite ? (
+      {canWrite && isLiveLocked(can(user.roles, "content:publish"), data.lesson.status) ? (
+        <LiveNotice />
+      ) : canWrite ? (
         <LessonForm moduleId={data.module.id} lesson={data.lesson} exercise={data.exercise} questions={data.questions} action={data.action} canPublish={can(user.roles, "content:publish")} />
       ) : (
         <p className="text-ink-2">You have read-only access to content.</p>

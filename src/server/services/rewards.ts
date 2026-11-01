@@ -21,7 +21,14 @@ import { applySkillGain, applyTrainingDay, levelForXp, type StreakEvent } from "
 type XpReason = (typeof xpTransactions.$inferInsert)["reason"];
 
 /** Admin-like rituals and bonuses earn XP but don't count as a training day (no streak farming). */
-const NON_TRAINING: XpReason[] = ["onboarding_completed", "achievement_earned", "weekly_review_completed", "checkpoint_completed"];
+const NON_TRAINING: XpReason[] = [
+  "onboarding_completed",
+  "achievement_earned",
+  "weekly_review_completed",
+  "checkpoint_completed",
+  "review_completed",
+  "reflection_completed",
+];
 
 export interface ActivityInput {
   reason: XpReason;
@@ -32,6 +39,8 @@ export interface ActivityInput {
   sourceId?: string | null;
   skillKey?: string | null;
   skillGain?: number;
+  /** Override whether this counts as a training day (e.g. a low-effort practice rep doesn't). */
+  countsAsTraining?: boolean;
 }
 
 export interface ActivityResult {
@@ -85,6 +94,7 @@ export async function recordActivity(
   today: ISODate,
   input: ActivityInput,
 ): Promise<ActivityResult> {
+  const training = input.countsAsTraining ?? !NON_TRAINING.includes(input.reason);
   const inserted = await db
     .insert(xpTransactions)
     .values({
@@ -94,6 +104,7 @@ export async function recordActivity(
       sourceType: input.sourceType ?? null,
       sourceId: input.sourceId ?? null,
       idempotencyKey: input.key,
+      countsAsTraining: training,
       activityDate: today,
     })
     .onConflictDoNothing()
@@ -121,12 +132,12 @@ export async function recordActivity(
   result.totalXp = await addXp(db, userId, input.amount);
 
   // Training-day streak
-  if (!NON_TRAINING.includes(input.reason)) {
+  if (training) {
     const next = applyTrainingDay(
       { current: streakRow?.current ?? 0, longest: streakRow?.longest ?? 0, lastActiveDate: streakRow?.lastActiveDate ?? null },
       today,
     );
-    if (next.event !== "same_day") {
+    if (next.event !== "same_day" && next.event !== "past") {
       await db
         .insert(streaks)
         .values({ userId, current: next.current, longest: next.longest, lastActiveDate: next.lastActiveDate })

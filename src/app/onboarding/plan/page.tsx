@@ -34,7 +34,7 @@ export default async function PlanRevealPage() {
         <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent animate-fade">Your plan is ready</p>
         <h1 className="mt-3 font-display text-[44px] leading-[1.02] animate-rise">{plan.title}</h1>
 
-        <section className="mt-8 rounded-3xl bg-ink p-6 text-bg animate-rise [animation-delay:120ms]">
+        <section className="mt-8 rounded-3xl bg-hero p-6 text-hero-ink animate-rise [animation-delay:120ms]">
           <p className="text-[12px] font-semibold uppercase tracking-[0.14em] opacity-60">Primary goal</p>
           <p className="mt-1 font-display text-[30px] leading-tight">{plan.primaryGoalName}</p>
           {plan.secondaryGoals.length > 0 && (
@@ -57,10 +57,10 @@ export default async function PlanRevealPage() {
         <section className="mt-3 rounded-2xl bg-surface p-5 shadow-card animate-rise [animation-delay:280ms]">
           <div className="flex items-baseline justify-between">
             <p className="text-[15px] font-semibold">Your roadmap</p>
-            <p className="text-[12px] text-muted">{roadmap.totalLessons} lessons · {roadmap.planWeeks} weeks</p>
+            <p className="text-[12px] text-muted">{roadmap.totalLessons} lessons · {roadmap.planDays} days</p>
           </div>
           <div className="mt-4">
-            <RoadmapTimeline stages={roadmap.stages} planWeeks={roadmap.planWeeks} lastWeek={roadmap.lastWeek} />
+            <RoadmapTimeline stages={roadmap.stages} planDays={roadmap.planDays} lastDay={roadmap.lastDay} />
           </div>
           {outline?.todayLesson && (
             <p className="mt-5 border-t border-line pt-4 text-[14px] text-ink-2">

@@ -2,8 +2,8 @@
  * Write side of the daily loop: lessons, exercises, knowledge checks,
  * missions, reflections and spaced reviews.
  */
-import { and, asc, eq, inArray, isNotNull, lte, or } from "drizzle-orm";
-import type { ISODate } from "@/lib/dates";
+import { and, asc, eq, inArray, isNotNull, lte, or, sql } from "drizzle-orm";
+import { diffDays, type ISODate } from "@/lib/dates";
 import { categorySkill } from "@/lib/taxonomy";
 import type { Executor } from "@/server/db";
 import {
@@ -32,6 +32,13 @@ import { initialReview, scaledXp, scheduleReview, SKILL_GAINS, XP } from "@/serv
 import { NotFoundError, ValidationError } from "@/server/errors";
 import { type ActivityResult, mergeResults, recordActivity } from "./rewards";
 import { getJourneyOutline } from "./training";
+
+/** A reflection needs at least a sentence to count. */
+const MIN_REFLECTION_WORDS = 4;
+
+function wordCount(text: string): number {
+  return text.trim() ? text.trim().split(/\s+/).length : 0;
+}
 
 /* ─────────────────────────── Access ─────────────────────────── */
 
@@ -249,6 +256,8 @@ export async function recordExerciseAttempt(
         sourceId: exercise.id,
         skillKey,
         skillGain: SKILL_GAINS.practice(feedback.score),
+        // A token rep (score under 40) earns some XP but doesn't keep a streak alive.
+        countsAsTraining: feedback.score >= 40,
       })
     : await recordActivity(db, userId, today, {
         reason: "exercise_completed",
@@ -363,6 +372,32 @@ export async function completeLesson(
   const alreadyCompleted = existing?.status === "completed";
 
   if (!alreadyCompleted) {
+    // Completion means the whole loop: the practice and the knowledge check, not just reading.
+    const [exercise] = await db
+      .select({ id: exercises.id })
+      .from(exercises)
+      .where(and(eq(exercises.lessonId, lesson.id), eq(exercises.status, "published")))
+      .limit(1);
+    if (exercise) {
+      const [attempt] = await db
+        .select({ id: exerciseAttempts.id })
+        .from(exerciseAttempts)
+        .where(and(eq(exerciseAttempts.userId, userId), eq(exerciseAttempts.exerciseId, exercise.id)))
+        .limit(1);
+      if (!attempt) throw new ValidationError("Finish the exercise first.");
+    }
+    const [quiz] = await db.select({ id: quizzes.id }).from(quizzes).where(and(eq(quizzes.lessonId, lesson.id), eq(quizzes.status, "published")));
+    if (quiz) {
+      const [attempt] = await db
+        .select({ id: quizAttempts.id })
+        .from(quizAttempts)
+        .where(and(eq(quizAttempts.userId, userId), eq(quizAttempts.quizId, quiz.id)))
+        .limit(1);
+      if (!attempt) throw new ValidationError("Finish the knowledge check first.");
+    }
+  }
+
+  if (!alreadyCompleted) {
     const now = new Date();
     if (existing) {
       await db
@@ -387,7 +422,7 @@ export async function completeLesson(
   );
 
   const text = input.reflection?.trim();
-  if (text && text.length >= 3) {
+  if (text && wordCount(text) >= MIN_REFLECTION_WORDS) {
     const [exists] = await db
       .select({ id: reflections.id })
       .from(reflections)
@@ -511,6 +546,9 @@ export async function checkInMission(
     sourceId: row.action.id,
     skillKey: categorySkill(row.lessonCategory),
     skillGain: SKILL_GAINS.action[input.outcome],
+    // Missions can be logged late for XP, but only same/next-day check-ins count as a training day
+    // (so old missions can't be "banked" to rescue a streak).
+    countsAsTraining: diffDays(row.attempt.actionDate, today) <= 1,
   });
   return { status: "done" as const, reward };
 }
@@ -535,9 +573,11 @@ export async function saveMissionReflection(
     .where(and(eq(reflections.userId, userId), eq(reflections.dailyActionAttemptId, attemptId)));
   if (existing) await db.update(reflections).set({ answers: clean }).where(eq(reflections.id, existing.id));
   else await db.insert(reflections).values({ userId, kind: "action", lessonId: row.action.lessonId, dailyActionAttemptId: attemptId, answers: clean });
+  // XP is for actually reflecting: "ok" is saved but earns nothing.
+  const words = Object.values(clean).reduce((n, v) => n + wordCount(v ?? ""), 0);
   const reward = await recordActivity(db, userId, today, {
     reason: "reflection_completed",
-    amount: XP.reflection,
+    amount: words >= MIN_REFLECTION_WORDS * 2 ? XP.reflection : 0,
     key: `reflection:action:${attemptId}`,
     sourceType: "daily_action",
     sourceId: row.action.id,
@@ -646,7 +686,11 @@ export async function switchJourney(db: Executor, userId: string, journeyId: str
   await db
     .insert(userJourneys)
     .values({ userId, journeyId })
-    .onConflictDoUpdate({ target: [userJourneys.userId, userJourneys.journeyId], set: { status: "active" } });
+    // A finished journey stays finished (it can be revisited, not reset).
+    .onConflictDoUpdate({
+      target: [userJourneys.userId, userJourneys.journeyId],
+      set: { status: sql`case when ${userJourneys.status} = 'completed' then 'completed'::user_journey_status else 'active'::user_journey_status end` },
+    });
   // Pause any other active journey: one focus at a time.
   const active = await db
     .select({ journeyId: userJourneys.journeyId })

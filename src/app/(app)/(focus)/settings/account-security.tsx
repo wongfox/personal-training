@@ -18,7 +18,7 @@ export function EmailStatus({ verified, email, notice }: { verified: boolean; em
           <p className={verified ? "text-[13px] text-success" : "text-[13px] text-accent"}>{verified ? "Confirmed" : "Not confirmed yet"}</p>
         </div>
         {!verified && (
-          <Button variant="secondary" size="sm" disabled={pending} onClick={() => start(async () => setState(await resendVerificationAction()))}>
+          <Button variant="secondary" size="sm" className="shrink-0 whitespace-nowrap" disabled={pending} onClick={() => start(async () => setState(await resendVerificationAction()))}>
             {pending ? "Sending…" : "Resend link"}
           </Button>
         )}

@@ -194,3 +194,15 @@ describe("password hashing", () => {
     expect(await verifyPassword("x", "garbage")).toBe(false);
   });
 });
+
+describe("roadmap calendar", () => {
+  it("lays journeys on non-overlapping plan days at the learner's rhythm", async () => {
+    const { scheduleRoadmap } = await import("@/server/engine/plan");
+    const stages = [1, 2, 3, 4, 5].map((i) => ({ id: String(i), title: `J${i}`, lessons: 9, completed: 0, status: "upcoming" as const }));
+    const daily = scheduleRoadmap(stages, 7);
+    expect(daily.map((s) => [s.fromDay, s.toDay])).toEqual([[1, 9], [10, 18], [19, 27], [28, 36], [37, 45]]);
+    const weekdays = scheduleRoadmap(stages, 5);
+    for (let i = 1; i < weekdays.length; i++) expect(weekdays[i].fromDay).toBe(weekdays[i - 1].toDay + 1);
+    expect(weekdays.at(-1)!.toDay).toBe(63);
+  });
+});

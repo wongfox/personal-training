@@ -20,6 +20,8 @@
   --danger: #b4352c;
   --danger-soft: #f6dedb;
   --shadow: 0 1px 2px rgb(22 21 15 / 0.04), 0 8px 24px -12px rgb(22 21 15 / 0.12);
+  --hero: #16150f;
+  --hero-ink: #f4f2ed;
   color-scheme: light;
 }
 
@@ -40,6 +42,8 @@
     --danger: #f07a6f;
     --danger-soft: #3a1a17;
     --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.6);
+    --hero: #27241e;
+    --hero-ink: #f2f0e9;
     color-scheme: dark;
   }
 }
@@ -60,6 +64,8 @@
   --danger: #f07a6f;
   --danger-soft: #3a1a17;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.6);
+  --hero: #27241e;
+  --hero-ink: #f2f0e9;
   color-scheme: dark;
 }
 
@@ -74,6 +80,8 @@
   --color-accent: var(--accent);
   --color-accent-ink: var(--accent-ink);
   --color-accent-soft: var(--accent-soft);
+  --color-hero: var(--hero);
+  --color-hero-ink: var(--hero-ink);
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
   --color-danger: var(--danger);

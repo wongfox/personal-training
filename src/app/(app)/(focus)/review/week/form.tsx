@@ -10,10 +10,10 @@ export function WeeklyReviewForm() {
   if (state.nextFocus) {
     return (
       <section className="mt-8 animate-rise">
-        <div className="rounded-3xl bg-ink p-6 text-bg">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-bg/60">Next week&apos;s focus</p>
+        <div className="rounded-3xl bg-hero p-6 text-hero-ink">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-hero-ink/60">Next week&apos;s focus</p>
           <p className="mt-2 font-display text-[28px] leading-tight">{state.nextFocus.headline}</p>
-          <p className="mt-3 text-[15px] leading-relaxed text-bg/80">{state.nextFocus.detail}</p>
+          <p className="mt-3 text-[15px] leading-relaxed text-hero-ink/80">{state.nextFocus.detail}</p>
         </div>
         {state.xp ? <p className="mt-3 text-center text-[13px] font-semibold text-accent">+{state.xp} XP</p> : null}
         <ButtonLink href="/home" className="mt-6">

@@ -712,6 +712,8 @@ export const xpTransactions = pgTable(
     /** Guards against double-awarding the same thing (e.g. "lesson:<id>"). */
     idempotencyKey: text("idempotency_key").notNull(),
     activityDate: date("activity_date").notNull(),
+    /** Whether this activity counts as a training day (streak, weekly strip). */
+    countsAsTraining: boolean("counts_as_training").notNull().default(true),
     createdAt: createdAt(),
   },
   (t) => [

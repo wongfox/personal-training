@@ -6,7 +6,7 @@ import { getDb } from "@/server/db";
 import { NotFoundError } from "@/server/errors";
 import { getPracticeAdmin } from "@/server/services/admin";
 import { uuidSchema } from "@/server/validation";
-import { PageHeader, Panel, StatusBadge } from "../../../ui";
+import { isLiveLocked, LiveNotice, PageHeader, Panel, StatusBadge } from "../../../ui";
 import { PracticeForm } from "../../library-forms";
 
 export const metadata: Metadata = { title: "Practice tool" };
@@ -29,7 +29,11 @@ export default async function PracticeToolAdminPage({ params }: PageProps<"/admi
         crumbs={[{ href: "/admin/content", label: "Content" }, { href: "/admin/content/practice", label: "Practice tools" }]}
         action={<StatusBadge status={tool.status} />}
       />
-      <Panel>{can(user.roles, "content:write") ? <PracticeForm tool={tool} canPublish={can(user.roles, "content:publish")} /> : <p>Read-only.</p>}</Panel>
+      {can(user.roles, "content:write") && isLiveLocked(can(user.roles, "content:publish"), tool.status) ? (
+        <LiveNotice />
+      ) : (
+        <Panel>{can(user.roles, "content:write") ? <PracticeForm tool={tool} canPublish={can(user.roles, "content:publish")} /> : <p>Read-only.</p>}</Panel>
+      )}
     </div>
   );
 }

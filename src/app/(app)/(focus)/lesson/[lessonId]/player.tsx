@@ -171,12 +171,12 @@ export function LessonPlayer({ lesson }: { lesson: OpenLessonView }) {
         {step === 3 && (
           <section>
             <Eyebrow>Expert insight</Eyebrow>
-            <figure className="mt-5 rounded-3xl bg-ink p-6 text-bg">
+            <figure className="mt-5 rounded-3xl bg-hero p-6 text-hero-ink">
               <Quote size={26} className="text-accent" aria-hidden />
               <blockquote className="mt-3 font-display text-[24px] leading-[1.3]">{c.expertInsight.text}</blockquote>
-              <figcaption className="mt-5 text-[14px] text-bg/70">
+              <figcaption className="mt-5 text-[14px] text-hero-ink/70">
                 — {c.expertInsight.source}
-                {c.expertInsight.sourceDetail && <span className="block text-[13px] text-bg/50">{c.expertInsight.sourceDetail}</span>}
+                {c.expertInsight.sourceDetail && <span className="block text-[13px] text-hero-ink/50">{c.expertInsight.sourceDetail}</span>}
               </figcaption>
             </figure>
           </section>
