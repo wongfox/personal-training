@@ -12,6 +12,8 @@ import {
   dailyActionAttempts,
   dailyActions,
   exercises,
+  journeyModules,
+  journeys,
   lessonProgress,
   lessons,
   reflections,
@@ -151,6 +153,12 @@ const PRACTICE_HINTS: { pattern: RegExp; slugHint: string; label: string }[] = [
  * retrieves the most relevant frameworks and lessons and frames them around
  * the learner's plan. Clearly limited, but useful and honest.
  */
+/** Curly-quotes a phrase unless the author already quoted it. */
+function quoted(text: string): string {
+  const t = text.trim();
+  return /^["“'‘]/.test(t) ? t : `“${t}”`;
+}
+
 /** Everyday words → the vocabulary the library uses, so "rambling" finds "bottom line up front". */
 const SYNONYMS: Record<string, string[]> = {
   ramble: ["concise", "bottom", "point", "first", "brief", "short"],
@@ -180,7 +188,12 @@ export async function playbookReply(db: Executor, question: string, ctx: CoachCo
   const words = new Set([...base, ...base.flatMap((w) => SYNONYMS[w] ?? [])]);
   const [library, lessonRows, tools] = await Promise.all([
     db.select({ slug: resources.slug, title: resources.title, description: resources.description, body: resources.body, category: resources.category }).from(resources).where(eq(resources.status, "published")),
-    db.select({ title: lessons.title, content: lessons.content, category: lessons.category }).from(lessons).where(eq(lessons.status, "published")),
+    db
+      .select({ title: lessons.title, content: lessons.content, category: lessons.category, journeyTitle: journeys.title })
+      .from(lessons)
+      .innerJoin(journeyModules, eq(journeyModules.id, lessons.moduleId))
+      .innerJoin(journeys, eq(journeys.id, journeyModules.journeyId))
+      .where(eq(lessons.status, "published")),
     db.select({ slug: exercises.slug, title: exercises.title }).from(exercises).where(and(eq(exercises.isPractice, true), eq(exercises.status, "published"))),
   ]);
   // TF-IDF-style relevance: a word that appears in almost every lesson ("meeting",
@@ -208,7 +221,7 @@ export async function playbookReply(db: Executor, question: string, ctx: CoachCo
     const c = bestLesson.l.content;
     parts.push(`Here's how I'd approach it, ${ctx.firstName}. The core idea is **${c.coreConcept.title.replace(/\.$/, "")}**:`);
     parts.push(c.coreConcept.keyPoints.map((k) => `- ${k}`).join("\n"));
-    parts.push(`For example — instead of “${c.example.before}”, try: “${c.example.after}”`);
+    parts.push(`For example — instead of ${quoted(c.example.before)}, try: ${quoted(c.example.after)}`);
   } else {
     parts.push(`Good question, ${ctx.firstName}. Start with the one thing you want the other person to remember, say it in your first sentence, then give a single reason and a concrete example.`);
   }
@@ -219,7 +232,7 @@ export async function playbookReply(db: Executor, question: string, ctx: CoachCo
   const tool = hint ? tools.find((t) => t.slug.includes(hint.slugHint)) : null;
   if (tool) parts.push(`Then rehearse it: open **${tool.title}** in Practice and do one rep before the real moment.`);
   if (bestLesson && bestLesson.s > 1) {
-    parts.push(`This comes from the lesson **${bestLesson.l.title}** — if it's in your plan you'll meet it there; either way, try the idea once today.`);
+    parts.push(`From the lesson **${bestLesson.l.title}** in ${bestLesson.l.journeyTitle}. Try the idea once today.`);
   }
   return parts.join("\n\n");
 }

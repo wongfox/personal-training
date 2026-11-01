@@ -94,7 +94,7 @@ export function CoachChat({
         </Link>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-5 py-6">
+      <main className="flex-1 overflow-y-auto px-5 py-6">
         {messages.length === 0 ? (
           <div className="animate-rise">
             <h1 className="font-display text-[34px] leading-[1.05]">What are you working on, {firstName}?</h1>
@@ -149,7 +149,7 @@ export function CoachChat({
         )}
         {error && <p className="mt-4 rounded-2xl bg-danger-soft px-4 py-3 text-[14px] text-danger">{error}</p>}
         <div ref={endRef} />
-      </div>
+      </main>
 
       <form
         onSubmit={(e) => {

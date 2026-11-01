@@ -86,7 +86,7 @@ export async function getHomeData(db: Executor, userId: string, today: ISODate) 
         const [doneToday] = await db
           .select({ id: xpTransactions.id })
           .from(xpTransactions)
-          .where(and(eq(xpTransactions.userId, userId), eq(xpTransactions.idempotencyKey, `practice:${rep.id}:${today}`)));
+          .where(and(eq(xpTransactions.userId, userId), eq(xpTransactions.idempotencyKey, `practice:${rep.id}:${today}`), eq(xpTransactions.countsAsTraining, true)));
         masteryRep = { ...rep, done: Boolean(doneToday) };
       }
     }

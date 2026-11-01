@@ -242,9 +242,14 @@ describe("referee round 4 regressions", () => {
     const yesterday = new Date(now.getTime() - 24 * 3600_000);
     // No server-side activity yesterday: a forged claim is counted as today.
     expect(await replayDay(db, userId, tz, yesterday, now)).toBe(localDate(tz, now));
-    // An exercise attempt the server recorded yesterday is evidence the learner was training then.
-    const [ex] = await db.select().from(exercises).where(eq(exercises.isPractice, true)).limit(1);
-    await db.insert(exerciseAttempts).values({ userId, exerciseId: ex.id, response: {}, score: 80, feedback: { score: 80, summary: "", strengths: [], improvements: [], source: "rules" }, createdAt: yesterday });
+    const attempt = (exerciseId: string) => ({ userId, exerciseId, response: {}, score: 80, feedback: { score: 80, summary: "", strengths: [], improvements: [], source: "rules" as const }, createdAt: yesterday });
+    // A practice rep yesterday isn't evidence of lesson work…
+    const [practice] = await db.select().from(exercises).where(eq(exercises.isPractice, true)).limit(1);
+    await db.insert(exerciseAttempts).values(attempt(practice.id));
+    expect(await replayDay(db, userId, tz, yesterday, now)).toBe(localDate(tz, now));
+    // …but a lesson exercise the server recorded yesterday is.
+    const [lessonExercise] = await db.select().from(exercises).where(eq(exercises.isPractice, false)).limit(1);
+    await db.insert(exerciseAttempts).values(attempt(lessonExercise.id));
     expect(await replayDay(db, userId, tz, yesterday, now)).toBe(localDate(tz, yesterday));
   });
 });

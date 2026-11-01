@@ -98,8 +98,7 @@ export async function syncStreak(db: Executor, userId: string, previousLongest =
     .selectDistinct({ day: xpTransactions.activityDate })
     .from(xpTransactions)
     .where(and(eq(xpTransactions.userId, userId), eq(xpTransactions.countsAsTraining, true)))
-    .orderBy(desc(xpTransactions.activityDate))
-    .limit(400);
+    .orderBy(desc(xpTransactions.activityDate));
   const days = rows.map((r) => r.day);
   let current = 0;
   let longest = previousLongest;
@@ -119,6 +118,53 @@ export async function syncStreak(db: Executor, userId: string, previousLongest =
     .values({ userId, current, longest, lastActiveDate })
     .onConflictDoUpdate({ target: streaks.userId, set: { current, longest, lastActiveDate } });
   return { current, longest, lastActiveDate };
+}
+
+/** Grants any newly earned achievements (and their bonus XP) into `result`. */
+async function awardAchievements(db: Executor, userId: string, today: ISODate, result: ActivityResult): Promise<void> {
+  const countRows = await db
+    .select({ reason: xpTransactions.reason, n: sql<number>`count(*)::int` })
+    .from(xpTransactions)
+    .where(eq(xpTransactions.userId, userId))
+    .groupBy(xpTransactions.reason);
+  const counts = Object.fromEntries(countRows.map((r) => [r.reason, Number(r.n)])) as Partial<Record<XpReason, number>>;
+  const owned = new Set(
+    (
+      await db
+        .select({ key: achievements.key })
+        .from(userAchievements)
+        .innerJoin(achievements, eq(achievements.id, userAchievements.achievementId))
+        .where(eq(userAchievements.userId, userId))
+    ).map((r) => r.key),
+  );
+  for (const key of earned(counts, result.streak.current)) {
+    if (owned.has(key)) continue;
+    const [ach] = await db.select().from(achievements).where(eq(achievements.key, key));
+    if (!ach) continue;
+    await db.insert(userAchievements).values({ userId, achievementId: ach.id }).onConflictDoNothing();
+    if (ach.xpReward > 0) {
+      const bonus = await db
+        .insert(xpTransactions)
+        .values({
+          userId,
+          amount: ach.xpReward,
+          reason: "achievement_earned",
+          sourceType: "achievement",
+          sourceId: ach.id,
+          idempotencyKey: `achievement:${key}`,
+          activityDate: today,
+          countsAsTraining: false,
+        })
+        .onConflictDoNothing()
+        .returning({ id: xpTransactions.id });
+      if (bonus.length) {
+        result.totalXp = await addXp(db, userId, ach.xpReward);
+        result.xp += ach.xpReward;
+      }
+    }
+    result.achievements.push({ key, title: ach.title });
+  }
+
 }
 
 export async function recordActivity(
@@ -165,6 +211,10 @@ export async function recordActivity(
         const { event, lost } = applyTrainingDay(prev, today);
         const fresh = await syncStreak(db, userId, prev.longest);
         result.streak = { current: fresh.current, longest: fresh.longest, event, lost };
+        const [p] = await db.select({ totalXp: profiles.totalXp }).from(profiles).where(eq(profiles.userId, userId));
+        result.totalXp = p?.totalXp ?? 0;
+        await awardAchievements(db, userId, today, result);
+        return result;
       }
     }
     const [p] = await db.select({ totalXp: profiles.totalXp }).from(profiles).where(eq(profiles.userId, userId));
@@ -214,49 +264,7 @@ export async function recordActivity(
     }
   }
 
-  // Achievements
-  const countRows = await db
-    .select({ reason: xpTransactions.reason, n: sql<number>`count(*)::int` })
-    .from(xpTransactions)
-    .where(eq(xpTransactions.userId, userId))
-    .groupBy(xpTransactions.reason);
-  const counts = Object.fromEntries(countRows.map((r) => [r.reason, Number(r.n)])) as Partial<Record<XpReason, number>>;
-  const owned = new Set(
-    (
-      await db
-        .select({ key: achievements.key })
-        .from(userAchievements)
-        .innerJoin(achievements, eq(achievements.id, userAchievements.achievementId))
-        .where(eq(userAchievements.userId, userId))
-    ).map((r) => r.key),
-  );
-  for (const key of earned(counts, result.streak.current)) {
-    if (owned.has(key)) continue;
-    const [ach] = await db.select().from(achievements).where(eq(achievements.key, key));
-    if (!ach) continue;
-    await db.insert(userAchievements).values({ userId, achievementId: ach.id }).onConflictDoNothing();
-    if (ach.xpReward > 0) {
-      const bonus = await db
-        .insert(xpTransactions)
-        .values({
-          userId,
-          amount: ach.xpReward,
-          reason: "achievement_earned",
-          sourceType: "achievement",
-          sourceId: ach.id,
-          idempotencyKey: `achievement:${key}`,
-          activityDate: today,
-          countsAsTraining: false,
-        })
-        .onConflictDoNothing()
-        .returning({ id: xpTransactions.id });
-      if (bonus.length) {
-        result.totalXp = await addXp(db, userId, ach.xpReward);
-        result.xp += ach.xpReward;
-      }
-    }
-    result.achievements.push({ key, title: ach.title });
-  }
+  await awardAchievements(db, userId, today, result);
 
   const after = levelForXp(result.totalXp);
   if (after.level > before.level) result.levelUp = { level: after.level, name: after.name };

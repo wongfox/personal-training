@@ -87,17 +87,21 @@ export async function loginAction(_prev: FormState, formData: FormData): Promise
 
   const db = getDb();
   const meta = await getRequestMeta();
-  const [byIp, byAccount] = await Promise.all([
+  const [byIp, byAccount, accountCeiling] = await Promise.all([
     rateLimit(db, `login-ip:${meta.ipAddress ?? "unknown"}`, 30, 900),
     // Per account *and* network: a stranger hammering your email can't lock you out from yours.
     rateLimit(db, `login:${parsed.data.email}:${meta.ipAddress ?? "unknown"}`, 8, 900),
+    // IP-independent ceiling per account: rotating addresses can't buy unlimited guesses.
+    rateLimit(db, `login-account:${parsed.data.email}`, 25, 900),
   ]);
-  if (!byIp.allowed || !byAccount.allowed) {
-    return { error: `Too many attempts. Try again in ${Math.ceil(Math.max(byIp.retryAfterSeconds, byAccount.retryAfterSeconds) / 60)} minutes.`, values: keep };
+  if (!byIp.allowed || !byAccount.allowed || !accountCeiling.allowed) {
+    await audit(db, { actorId: null, action: "auth.login_locked", entityType: "user", metadata: { email: parsed.data.email }, ipAddress: meta.ipAddress });
+    return { error: `Too many attempts. Try again in ${Math.ceil(Math.max(byIp.retryAfterSeconds, byAccount.retryAfterSeconds, accountCeiling.retryAfterSeconds) / 60)} minutes.`, values: keep };
   }
 
   const result = await authenticate(db, parsed.data.email, parsed.data.password);
   if (!result.ok) {
+    await audit(db, { actorId: null, action: "auth.login_failed", entityType: "user", metadata: { email: parsed.data.email, reason: result.error }, ipAddress: meta.ipAddress });
     return {
       error: result.error === "suspended" ? "This account is suspended. Contact support." : "Email or password is incorrect.",
       values: keep,

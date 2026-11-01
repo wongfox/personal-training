@@ -82,6 +82,7 @@ export function MissionCheckIn({ mission }: { mission: Mission }) {
   const footer =
     stage === "reflect" ? (
       <div className="space-y-2">
+        {!filled && <p className="text-center text-[13px] text-muted">Answer at least one question to save.</p>}
         <Button onClick={saveReflection} disabled={!filled || busy}>
           {busy ? "Saving…" : "Save reflection"}
         </Button>

@@ -120,6 +120,13 @@ function ModuleCard({ module: m, index }: { module: OutlineModule; index: number
           </p>
           <ProgressBar value={pct} tone={pct === 100 ? "success" : "ink"} className="mt-3" label={`${m.title} progress`} />
         </div>
+        <details open={state === "In progress"} className="group border-t border-line">
+          <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3 text-[13px] font-medium text-ink-2 hover:bg-surface-2 [&::-webkit-details-marker]:hidden">
+            {state === "In progress" ? "Lessons" : state === "Completed" ? "Review lessons" : "See lessons"}
+            <span className="text-muted transition group-open:rotate-180" aria-hidden>
+              ▾
+            </span>
+          </summary>
         <ol className="border-t border-line">
           {m.lessons.map((l, i) => {
             const content = (
@@ -158,6 +165,7 @@ function ModuleCard({ module: m, index }: { module: OutlineModule; index: number
             );
           })}
         </ol>
+        </details>
       </Card>
     </li>
   );

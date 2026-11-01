@@ -69,10 +69,23 @@ export async function requirePermission(permission: Permission): Promise<Session
   return user;
 }
 
+/**
+ * The client IP, taken only from what our own infrastructure sets — clients
+ * can put anything in these headers themselves:
+ *  - On Vercel (or with TRUST_PROXY=vercel), the platform overwrites x-real-ip.
+ *  - Otherwise use the RIGHTMOST x-forwarded-for hop: it was appended by the
+ *    proxy (or Next's server) directly in front of us, not by the client.
+ */
+export function clientIp(h: Headers): string | null {
+  if (process.env.VERCEL || process.env.TRUST_PROXY === "vercel") {
+    const real = h.get("x-real-ip")?.trim();
+    if (real) return real;
+  }
+  const hops = (h.get("x-forwarded-for") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  return hops.at(-1) ?? null;
+}
+
 export async function getRequestMeta(): Promise<{ ipAddress: string | null; userAgent: string | null }> {
   const h = await headers();
-  // Prefer the platform-set x-real-ip (Vercel and most proxies overwrite it); x-forwarded-for
-  // can carry client-supplied entries, so it is only a fallback.
-  const forwarded = h.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return { ipAddress: h.get("x-real-ip") || forwarded || null, userAgent: h.get("user-agent") };
+  return { ipAddress: clientIp(h), userAgent: h.get("user-agent") };
 }

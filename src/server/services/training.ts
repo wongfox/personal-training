@@ -8,6 +8,7 @@ import {
   dailyActionAttempts,
   dailyActions,
   exerciseAttempts,
+  exercises,
   goals,
   growthPlans,
   journeyModules,
@@ -281,10 +282,10 @@ export async function getMissionForLesson(db: Executor, lessonId: string) {
 
 /**
  * The day a replayed offline write counts for. The client says when it
- * happened; the server only accepts "yesterday" at the earliest, and never a
- * day before the learner's last recorded training day, plan start or account
- * creation — so replays can preserve an honest offline day but can't backfill
- * a missed one, unlock extra lessons or rewind a streak.
+ * happened; the server accepts at most "yesterday", never before plan start or
+ * account creation, and only when it saw lesson work from this learner on that
+ * day (lesson exercises can only be submitted online). Anything else counts as
+ * today, so a replay can preserve an honest offline day but not invent one.
  */
 export async function replayDay(db: Executor, userId: string, timezone: string, occurredAt: Date, now = new Date()): Promise<ISODate> {
   const today = localDate(timezone, now);
@@ -305,6 +306,13 @@ export async function replayDay(db: Executor, userId: string, timezone: string, 
   const recent = await db
     .select({ createdAt: exerciseAttempts.createdAt })
     .from(exerciseAttempts)
-    .where(and(eq(exerciseAttempts.userId, userId), gte(exerciseAttempts.createdAt, new Date(now.getTime() - 48 * 3600_000))));
+    .innerJoin(exercises, eq(exercises.id, exerciseAttempts.exerciseId))
+    .where(
+      and(
+        eq(exerciseAttempts.userId, userId),
+        eq(exercises.isPractice, false),
+        gte(exerciseAttempts.createdAt, new Date(now.getTime() - 48 * 3600_000)),
+      ),
+    );
   return recent.some((r) => localDate(timezone, r.createdAt) === claimed) ? claimed : today;
 }

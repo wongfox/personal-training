@@ -88,7 +88,7 @@ export function buildCoachInsight(s: InsightSignals): CoachInsight {
   const improving = [...s.skills]
     .map((k) => ({ ...k, gain: k.score - k.baseline }))
     .sort((a, b) => b.gain - a.gain)[0];
-  const improvingClause = improving && improving.gain >= 3 ? `You're improving your ${improving.name.toLowerCase()} (+${improving.gain} since you started)` : null;
+  const improvingClause = improving && improving.gain >= 3 && s.daysInPlan >= 3 ? `You're improving your ${improving.name.toLowerCase()} (+${improving.gain} since you started)` : null;
 
   // 1. Reflections say they hesitate.
   const hesitant = s.reflections.slice(0, 5).filter((r) => HESITATION.test(r)).length;

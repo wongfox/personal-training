@@ -29,11 +29,11 @@ export async function POST(request: Request) {
   const form = await request.formData();
   const raw = form.get("token");
   const token = typeof raw === "string" ? raw : "";
-  if (token.length < 20 || token.length > 128) return NextResponse.redirect(new URL("/settings?verified=invalid", request.url), 303);
+  if (token.length < 20 || token.length > 128) return NextResponse.redirect(new URL("/verify-email?state=invalid", request.url), 303);
   const db = getDb();
   const session = await getSession();
   const result = await db.transaction((tx) => verifyEmail(tx, token));
-  if (!result) return NextResponse.redirect(new URL("/settings?verified=invalid", request.url), 303);
+  if (!result) return NextResponse.redirect(new URL("/verify-email?state=invalid", request.url), 303);
 
   const sameUser = session?.user.id === result.userId;
   if (!sameUser) await invalidateUserSessions(db, result.userId);
