@@ -90,7 +90,7 @@ test("a new learner completes the whole daily loop", async ({ page }) => {
   await expect(page.getByText("Real-world mission").first()).toBeVisible();
   await shot(page, "11-mission");
   await page.getByRole("button", { name: "I'll do it today" }).click();
-  await page.getByRole("textbox").fill("In tomorrow's stand-up.");
+  await page.getByRole("textbox").fill("I will lead with my point in tomorrow's stand-up.");
   await page.getByRole("button", { name: "Continue" }).click();
   for (let q = 0; q < 3; q++) {
     await page.getByRole("radio").first().click();
