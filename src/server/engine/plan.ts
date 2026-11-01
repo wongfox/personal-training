@@ -1,0 +1,98 @@
+/**
+ * Turns onboarding answers into a Personal Growth Plan.
+ */
+import { categorySkill, GOALS, SKILLS, type GoalKey, type SkillKey } from "@/lib/taxonomy";
+import type { DifficultyLevel } from "@/server/db/types";
+
+export type Frequency = "daily" | "five_per_week" | "three_per_week";
+
+export interface OnboardingAnswers {
+  goals: GoalKey[];
+  primaryGoal: GoalKey;
+  situations: string[];
+  level: DifficultyLevel;
+  minutes: number;
+  frequency: Frequency;
+  challenge: string;
+  ninetyDayGoal: string;
+  /** 1–5 self-rating per skill. */
+  selfRatings: Partial<Record<SkillKey, number>>;
+}
+
+export interface JourneyOption {
+  id: string;
+  slug: string;
+  title: string;
+  category: string;
+}
+
+/** When no journey trains a skill directly, the closest neighbour does. */
+const SKILL_FALLBACK: Record<SkillKey, SkillKey[]> = {
+  communication: ["confidence"],
+  confidence: ["communication"],
+  leadership: ["communication"],
+  intelligence: ["communication"],
+  social_skills: ["networking", "communication"],
+  networking: ["social_skills", "communication"],
+};
+
+export function goalSkill(goal: GoalKey): SkillKey {
+  return GOALS.find((g) => g.key === goal)?.skill ?? "communication";
+}
+
+export function pickJourney(primaryGoal: GoalKey, journeys: JourneyOption[]): JourneyOption | null {
+  if (journeys.length === 0) return null;
+  // A journey whose own category is the goal wins (e.g. a storytelling journey).
+  const exact = journeys.find((j) => j.category === primaryGoal);
+  if (exact) return exact;
+  const skill = goalSkill(primaryGoal);
+  for (const s of [skill, ...SKILL_FALLBACK[skill]]) {
+    const match = journeys.find((j) => categorySkill(j.category) === s);
+    if (match) return match;
+  }
+  return journeys[0];
+}
+
+export const FREQUENCY_DAYS: Record<Frequency, number> = { daily: 7, five_per_week: 5, three_per_week: 3 };
+
+export const FREQUENCY_LABEL: Record<Frequency, string> = {
+  daily: "Every day",
+  five_per_week: "5 days a week",
+  three_per_week: "3 days a week",
+};
+
+export interface PlanDraft {
+  title: string;
+  primaryGoal: GoalKey;
+  secondaryGoals: GoalKey[];
+  journey: JourneyOption | null;
+  level: DifficultyLevel;
+  dailyMinutes: number;
+  frequency: Frequency;
+  durationDays: number;
+  weeklyTarget: number;
+  focusSkills: SkillKey[];
+}
+
+export function buildPlan(firstName: string, a: OnboardingAnswers, journeys: JourneyOption[]): PlanDraft {
+  const primaryGoal = a.goals.includes(a.primaryGoal) ? a.primaryGoal : (a.goals[0] ?? "communication");
+  const secondaryGoals = a.goals.filter((g) => g !== primaryGoal).slice(0, 3);
+  const focusSkills = [...new Set([primaryGoal, ...secondaryGoals].map(goalSkill))];
+  const name = firstName.trim().split(/\s+/)[0] || "Your";
+  return {
+    title: name === "Your" ? "Your Growth Plan" : `${name}'s Growth Plan`,
+    primaryGoal,
+    secondaryGoals,
+    journey: pickJourney(primaryGoal, journeys),
+    level: a.level,
+    dailyMinutes: a.minutes,
+    frequency: a.frequency,
+    durationDays: 90,
+    weeklyTarget: FREQUENCY_DAYS[a.frequency],
+    focusSkills,
+  };
+}
+
+export function skillName(key: string): string {
+  return SKILLS.find((s) => s.key === key)?.name ?? key;
+}

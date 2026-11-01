@@ -1,0 +1,145 @@
+"use server";
+
+import { redirect } from "next/navigation";
+import {
+  deleteSessionCookie,
+  getRequestMeta,
+  getSession,
+  setSessionCookie,
+} from "@/server/auth/current-user";
+import { rateLimit } from "@/server/auth/rate-limit";
+import { createSession, invalidateSession, invalidateUserSessions } from "@/server/auth/sessions";
+import { getDb } from "@/server/db";
+import { appUrl, audit, sendEmail, track } from "@/server/platform";
+import { authenticate, createPasswordReset, registerUser, resetPassword } from "@/server/services/accounts";
+import {
+  fieldErrors,
+  forgotPasswordSchema,
+  loginSchema,
+  registerSchema,
+  resetPasswordSchema,
+} from "@/server/validation";
+
+export interface FormState {
+  error?: string;
+  fields?: Record<string, string>;
+  success?: string;
+  values?: Record<string, string>;
+}
+
+function value(formData: FormData, key: string): string {
+  const v = formData.get(key);
+  return typeof v === "string" ? v : "";
+}
+
+export async function registerAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const raw = {
+    name: value(formData, "name"),
+    email: value(formData, "email"),
+    password: value(formData, "password"),
+    timezone: value(formData, "timezone") || undefined,
+  };
+  const keep = { name: raw.name, email: raw.email };
+  const parsed = registerSchema.safeParse(raw);
+  if (!parsed.success) return { fields: fieldErrors(parsed.error), values: keep };
+
+  const db = getDb();
+  const meta = await getRequestMeta();
+  const limit = await rateLimit(db, `register:${meta.ipAddress ?? "unknown"}`, 5, 3600);
+  if (!limit.allowed) return { error: "Too many sign-ups from this network. Try again later.", values: keep };
+
+  const result = await registerUser(db, parsed.data);
+  if (!result.ok) return { fields: { email: "An account with this email already exists." }, values: keep };
+
+  const session = await createSession(db, result.userId, meta);
+  await setSessionCookie(session.token, session.expiresAt);
+  await audit(db, { actorId: result.userId, action: "auth.register", entityType: "user", entityId: result.userId, ipAddress: meta.ipAddress });
+  await track(db, result.userId, "onboarding_started");
+  redirect("/onboarding");
+}
+
+export async function loginAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const raw = { email: value(formData, "email"), password: value(formData, "password") };
+  const keep = { email: raw.email };
+  const parsed = loginSchema.safeParse(raw);
+  if (!parsed.success) return { fields: fieldErrors(parsed.error), values: keep };
+
+  const db = getDb();
+  const meta = await getRequestMeta();
+  const [byIp, byAccount] = await Promise.all([
+    rateLimit(db, `login-ip:${meta.ipAddress ?? "unknown"}`, 30, 900),
+    rateLimit(db, `login:${parsed.data.email}`, 8, 900),
+  ]);
+  if (!byIp.allowed || !byAccount.allowed) {
+    return { error: `Too many attempts. Try again in ${Math.ceil(Math.max(byIp.retryAfterSeconds, byAccount.retryAfterSeconds) / 60)} minutes.`, values: keep };
+  }
+
+  const result = await authenticate(db, parsed.data.email, parsed.data.password);
+  if (!result.ok) {
+    return {
+      error: result.error === "suspended" ? "This account is suspended. Contact support." : "Email or password is incorrect.",
+      values: keep,
+    };
+  }
+
+  const session = await createSession(db, result.userId, meta);
+  await setSessionCookie(session.token, session.expiresAt);
+  await audit(db, { actorId: result.userId, action: "auth.login", entityType: "user", entityId: result.userId, metadata: { method: "password" }, ipAddress: meta.ipAddress });
+  redirect("/home");
+}
+
+export async function logoutAction(): Promise<void> {
+  const session = await getSession();
+  if (session) await invalidateSession(getDb(), session.sessionId);
+  await deleteSessionCookie();
+  redirect("/login");
+}
+
+const FORGOT_MESSAGE = "If an account exists for that email, a reset link is on its way. It expires in 1 hour.";
+
+export async function forgotPasswordAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const parsed = forgotPasswordSchema.safeParse({ email: value(formData, "email") });
+  if (!parsed.success) return { fields: fieldErrors(parsed.error) };
+
+  const db = getDb();
+  const meta = await getRequestMeta();
+  const [byIp, byAccount] = await Promise.all([
+    rateLimit(db, `forgot-ip:${meta.ipAddress ?? "unknown"}`, 10, 3600),
+    rateLimit(db, `forgot:${parsed.data.email}`, 3, 3600),
+  ]);
+  // Same response either way so the endpoint can't be used to probe accounts.
+  if (!byIp.allowed || !byAccount.allowed) return { success: FORGOT_MESSAGE };
+
+  const reset = await createPasswordReset(db, parsed.data.email);
+  if (reset) {
+    const link = appUrl(`/reset-password?token=${encodeURIComponent(reset.token)}`);
+    await sendEmail({
+      to: parsed.data.email,
+      subject: "Reset your Personal Growth OS password",
+      text: `Hi ${reset.name},\n\nUse this link to choose a new password (valid for 1 hour):\n${link}\n\nIf you didn't ask for this, you can ignore this email.`,
+    });
+  }
+  return { success: FORGOT_MESSAGE };
+}
+
+export async function resetPasswordAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const parsed = resetPasswordSchema.safeParse({ token: value(formData, "token"), password: value(formData, "password") });
+  if (!parsed.success) {
+    const fields = fieldErrors(parsed.error);
+    if (fields.token) return { error: "This reset link is invalid. Request a new one." };
+    return { fields };
+  }
+  const db = getDb();
+  const meta = await getRequestMeta();
+  const limit = await rateLimit(db, `reset-ip:${meta.ipAddress ?? "unknown"}`, 10, 3600);
+  if (!limit.allowed) return { error: "Too many attempts. Try again later." };
+
+  const userId = await resetPassword(db, parsed.data.token, parsed.data.password);
+  if (!userId) return { error: "This reset link has expired or was already used. Request a new one." };
+
+  await invalidateUserSessions(db, userId);
+  const session = await createSession(db, userId, meta);
+  await setSessionCookie(session.token, session.expiresAt);
+  await audit(db, { actorId: userId, action: "auth.password_reset", entityType: "user", entityId: userId, ipAddress: meta.ipAddress });
+  redirect("/home");
+}

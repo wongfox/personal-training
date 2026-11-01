@@ -1,0 +1,22 @@
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { requireUser } from "@/server/auth/current-user";
+import { getDb } from "@/server/db";
+import { NotFoundError } from "@/server/errors";
+import { getMission } from "@/server/services/learning";
+import { MissionCheckIn } from "./check-in";
+
+export const metadata: Metadata = { title: "Mission check-in" };
+
+export default async function MissionPage({ params }: PageProps<"/mission/[attemptId]">) {
+  const { attemptId } = await params;
+  const user = await requireUser();
+  if (!/^[0-9a-f-]{36}$/i.test(attemptId)) notFound();
+  try {
+    const mission = await getMission(getDb(), user.id, attemptId);
+    return <MissionCheckIn mission={mission} />;
+  } catch (e) {
+    if (e instanceof NotFoundError) notFound();
+    throw e;
+  }
+}
