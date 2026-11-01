@@ -39,6 +39,8 @@ export function apiError(status: number, error: string) {
  * Wraps a route handler: session (cookie or bearer), onboarding gate, CSRF,
  * optional per-user rate limit, and consistent JSON errors.
  */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function apiHandler<P>(
   handler: (ctx: ApiContext, params: P) => Promise<unknown>,
   opts: { rateLimit?: { key: string; limit: number; windowSeconds: number } } = {},
@@ -53,8 +55,13 @@ export function apiHandler<P>(
         const r = await rateLimit(getDb(), `${opts.rateLimit.key}:${session.user.id}`, opts.rateLimit.limit, opts.rateLimit.windowSeconds);
         if (!r.allowed) throw new RateLimitError();
       }
+      const params = await segment.params;
+      // Every dynamic segment in this API is a UUID; anything else can only be a miss.
+      if (Object.values(params as Record<string, unknown>).some((v) => typeof v !== "string" || !UUID.test(v))) {
+        return apiError(404, "Not found.");
+      }
       const ctx: ApiContext = { user: session.user, today: localDate(session.user.timezone), request };
-      const result = await handler(ctx, await segment.params);
+      const result = await handler(ctx, params);
       return NextResponse.json(result ?? { ok: true });
     } catch (error) {
       if (error instanceof AppError) return apiError(error.status, error.message);

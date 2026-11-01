@@ -29,6 +29,28 @@ export interface CoachInsight {
   recommendation: string;
   focus: string;
   tone: "welcome" | "praise" | "nudge" | "challenge";
+  /** A concrete practice rep that trains exactly the focus. */
+  drill?: { href: string; label: string };
+}
+
+/** Which practice tool trains which measured dimension. */
+const DRILLS: Record<string, { slug: string; label: string }> = {
+  confidence: { slug: "practice-hedge-hunter-recommendation", label: "Hedge Hunter" },
+  authority: { slug: "practice-hedge-hunter-recommendation", label: "Hedge Hunter" },
+  conciseness: { slug: "practice-bottom-line-up-front", label: "Bottom line up front" },
+  executive_presence: { slug: "practice-bottom-line-up-front", label: "Bottom line up front" },
+  clarity: { slug: "practice-organizer-prep", label: "Thought Organizer (PREP)" },
+  structure: { slug: "practice-organizer-scr", label: "Thought Organizer (SCR)" },
+  storytelling: { slug: "practice-story-builder", label: "Story Builder" },
+  persuasion: { slug: "practice-presentation-trainer", label: "Presentation Trainer" },
+  curiosity: { slug: "practice-ask-better-questions", label: "Ask better questions" },
+  empathy: { slug: "practice-conversation-colleague-pushback", label: "Conversation Simulator" },
+  flow: { slug: "practice-conversation-potential-client", label: "Conversation Simulator" },
+};
+
+function drillFor(key: string): CoachInsight["drill"] {
+  const d = DRILLS[key];
+  return d ? { href: `/practice/${d.slug}`, label: d.label } : undefined;
 }
 
 const HESITATION = /\b(nervous|anxious|hesitat\w*|afraid|scared|awkward|froze|freeze|didn'?t know what to say|blank(ed)?|overthink\w*|shy|intimidat\w*|avoid\w*)\b/i;
@@ -54,8 +76,6 @@ function weakestDimension(exercises: InsightSignals["exercises"]): { key: string
 }
 
 export function buildCoachInsight(s: InsightSignals): CoachInsight {
-  const nextLine = s.next ? `Tomorrow's lesson, “${s.next.title}”, builds exactly this.` : "Use the Practice tab to rehearse it today.";
-
   if (s.lessonsCompleted === 0 && s.actions.length === 0) {
     return {
       tone: "welcome",
@@ -79,7 +99,8 @@ export function buildCoachInsight(s: InsightSignals): CoachInsight {
       tone: "challenge",
       focus: "Initiating",
       observation: `${improvingClause ?? "You're putting in the reps"}, but your reflections suggest you still hesitate at the moment you need to start — the first sentence, the first step.`,
-      recommendation: `Lower the bar: decide your opening line before the moment arrives, then say it within three seconds. ${nextLine}`,
+      recommendation: "Lower the bar: decide your opening line before the moment arrives, then say it within three seconds. Rehearse it once first, where it's safe.",
+      drill: { href: "/practice/practice-networking-event", label: "Networking Practice" },
     };
   }
 
@@ -103,8 +124,9 @@ export function buildCoachInsight(s: InsightSignals): CoachInsight {
       focus: weak.label,
       observation: `${improvingClause ? improvingClause + ". Your" : "Your"} weakest signal right now is ${weak.label.toLowerCase()}${detail} (averaging ${Math.round(weak.avg)}/100).`,
       recommendation: weak.key === "curiosity"
-        ? `In your next conversation, ask two questions before you share anything about yourself. ${nextLine}`
-        : `Before you hit submit or speak, reread once for ${weak.label.toLowerCase()} only. ${nextLine}`,
+        ? "In your next conversation, ask two questions before you share anything about yourself."
+        : `Before you hit submit or speak, reread once for ${weak.label.toLowerCase()} only — then do one focused rep.`,
+      drill: drillFor(weak.key),
     };
   }
 

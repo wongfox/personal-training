@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
+import { InlineScript } from "@/components/inline-script";
 import { ServiceWorkerRegistrar } from "@/components/pwa/service-worker-registrar";
 import "./globals.css";
 
@@ -40,11 +41,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <head>
         {/* Apply a stored theme preference before paint to avoid a flash. */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem("pgos-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}`,
-          }}
-        />
+        <InlineScript html={`try{var t=localStorage.getItem("pgos-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}`} />
       </head>
       <body className="min-h-full bg-bg text-ink">
         {children}

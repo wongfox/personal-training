@@ -271,15 +271,18 @@ function scorePitch(_config: PitchConfig, r: ExerciseResponse["pitch"]): Exercis
   const dims: FeedbackDimension[] = ["structure", "clarity", "executive_presence", "storytelling", "persuasion", "conciseness"];
   const result = evaluateText(r.text, dims, { wordBudget: r.duration * SPEAKING_WPM });
   const improvements = [...result.improvements];
+  // An opening needs room to work: a couple of lines can't earn a high structure or persuasion score.
+  const lengthFactor = Math.min(1, result.metrics.words / 40);
+  const score = Math.round(result.score * (0.4 + 0.6 * lengthFactor));
   if (result.metrics.words < 40) improvements.unshift("Too short to judge well — write at least the full opening (40+ words).");
   const objective = r.objective.toLowerCase();
   if ((objective.includes("approval") || objective.includes("budget") || objective.includes("persuade")) && result.metrics.callToAction.length === 0) {
     improvements.unshift(`Your objective is to “${r.objective}”, but you never actually ask for it. Say it plainly.`);
   }
   return {
-    score: result.score,
-    summary: summaryForScore(result.score),
-    strengths: result.strengths,
+    score,
+    summary: summaryForScore(score),
+    strengths: lengthFactor < 1 ? result.strengths.slice(0, 1) : result.strengths,
     improvements: improvements.slice(0, 3),
     dimensions: result.dimensions,
     flagged: result.flagged,

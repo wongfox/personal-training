@@ -2,6 +2,7 @@
  * Cross-cutting platform services: transactional email, audit trail and
  * product analytics. Each is a thin, swappable adapter.
  */
+import { and, eq, gte } from "drizzle-orm";
 import type { Executor } from "@/server/db";
 import { analyticsEvents, auditLogs } from "@/server/db/schema";
 
@@ -93,6 +94,21 @@ export const ANALYTICS_EVENTS = [
 ] as const;
 
 export type AnalyticsEvent = (typeof ANALYTICS_EVENTS)[number];
+
+/** Records an event at most once per user per UTC day (e.g. app_opened, which feeds DAU/WAU/MAU). */
+export async function trackDaily(db: Executor, userId: string, name: AnalyticsEvent): Promise<void> {
+  try {
+    const startOfDay = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`);
+    const [seen] = await db
+      .select({ id: analyticsEvents.id })
+      .from(analyticsEvents)
+      .where(and(eq(analyticsEvents.userId, userId), eq(analyticsEvents.name, name), gte(analyticsEvents.createdAt, startOfDay)))
+      .limit(1);
+    if (!seen) await track(db, userId, name);
+  } catch (error) {
+    console.error("[analytics] failed to record %s", name, error);
+  }
+}
 
 /** First-party event log. Never throws — analytics must not break a user flow. */
 export async function track(

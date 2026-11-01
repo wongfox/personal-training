@@ -164,7 +164,7 @@ describe("coach insight", () => {
     });
     expect(i.observation).toMatch(/improving your confidence/);
     expect(i.observation).toMatch(/hesitate/);
-    expect(i.recommendation).toMatch(/Open the conversation/);
+    expect(i.drill?.href).toMatch(/^\/practice\//);
   });
   it("nudges inconsistent training", () => {
     expect(buildCoachInsight({ ...base, daysTrainedLast7: 1 }).focus).toBe("Consistency");

@@ -9,7 +9,7 @@ import { formatDay, greeting, localDate } from "@/lib/dates";
 import { categoryName } from "@/lib/taxonomy";
 import { requireUser } from "@/server/auth/current-user";
 import { getDb } from "@/server/db";
-import { track } from "@/server/platform";
+import { trackDaily } from "@/server/platform";
 import { getHomeData } from "@/server/services/home";
 
 export const metadata: Metadata = { title: "Today" };
@@ -20,7 +20,7 @@ export default async function HomePage() {
   const today = localDate(user.timezone);
   const data = await getHomeData(db, user.id, today);
   if (!data) redirect("/onboarding");
-  await track(db, user.id, "app_opened");
+  await trackDaily(db, user.id, "app_opened");
 
   const firstName = user.name.split(" ")[0];
   const { todayLesson, doneLesson, nextLesson } = data;
@@ -165,6 +165,14 @@ export default async function HomePage() {
           <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-accent">{data.insight.focus}</p>
           <p className="mt-2 text-[16px] leading-relaxed">{data.insight.observation}</p>
           <p className="mt-3 text-[14px] leading-relaxed text-ink-2">{data.insight.recommendation}</p>
+          {data.insight.drill && (
+            <Link
+              href={data.insight.drill.href}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3.5 py-2 text-[13px] font-medium hover:bg-line"
+            >
+              Practise it: {data.insight.drill.label} <ArrowRight size={14} />
+            </Link>
+          )}
         </Card>
       </section>
 
