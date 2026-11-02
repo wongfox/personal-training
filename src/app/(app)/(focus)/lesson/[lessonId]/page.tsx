@@ -3,13 +3,17 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { FocusShell } from "@/components/focus-shell";
 import { ButtonLink } from "@/components/ui/button";
+import { getTranslator } from "@/i18n/server";
 import { localDate } from "@/lib/dates";
 import { requireUser } from "@/server/auth/current-user";
 import { getDb } from "@/server/db";
 import { getLessonForUser } from "@/server/services/learning";
 import { LessonPlayer } from "./player";
 
-export const metadata: Metadata = { title: "Lesson" };
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getTranslator();
+  return { title: t("lesson.metaTitle") };
+}
 
 export default async function LessonPage({ params }: PageProps<"/lesson/[lessonId]">) {
   const { lessonId } = await params;
@@ -18,20 +22,20 @@ export default async function LessonPage({ params }: PageProps<"/lesson/[lessonI
   if (!lesson) notFound();
 
   if (lesson.locked) {
+    const { t } = await getTranslator();
+    const otherJourney = lesson.access === "not_enrolled";
     return (
       <FocusShell closeHref="/journey">
         <div className="flex min-h-[70dvh] flex-col items-center justify-center text-center">
-          <span className="grid h-14 w-14 place-items-center rounded-full bg-surface-2 text-ink-2">
-            <Lock size={22} />
+          <span className="grid h-16 w-16 place-items-center rounded-[22px] bg-surface text-accent shadow-card">
+            <Lock size={24} strokeWidth={1.8} />
           </span>
-          <h1 className="mt-6 font-display text-[30px] leading-tight">{lesson.title}</h1>
-          <p className="mt-3 max-w-xs text-[15px] text-ink-2">
-            {lesson.access === "not_enrolled"
-              ? "This lesson is part of another journey. Switch journeys to start it."
-              : "One idea a day. This lesson unlocks once you've finished the ones before it — one per day."}
+          <h1 className="mt-6 font-display text-[32px] leading-[1.1]">{lesson.title}</h1>
+          <p className="mt-3 max-w-xs text-[15px] leading-relaxed text-ink-2">
+            {otherJourney ? t("lesson.locked.otherJourney") : t("lesson.locked.notYet")}
           </p>
-          <ButtonLink href={lesson.access === "not_enrolled" ? "/journey#journeys" : "/home"} className="mt-8 max-w-xs">
-            {lesson.access === "not_enrolled" ? "See journeys" : "Back to today"}
+          <ButtonLink href={otherJourney ? "/journey#journeys" : "/home"} className="mt-8 max-w-xs">
+            {otherJourney ? t("lesson.locked.seeJourneys") : t("common.backToToday")}
           </ButtonLink>
         </div>
       </FocusShell>

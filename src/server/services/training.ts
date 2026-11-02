@@ -22,11 +22,15 @@ import {
   userGoals,
   xpTransactions,
 } from "@/server/db/schema";
+import { skillName } from "@/lib/taxonomy";
 import { visibleStreak } from "@/server/engine/progression";
 import { type LessonProgressRef, type LessonState, resolveToday } from "@/server/engine/today";
+import { type Locale, requestLocale, resolveLocale } from "@/server/i18n/locale";
+import { localize, tr } from "@/server/i18n/localize";
 
-export async function getActivePlan(db: Executor, userId: string) {
-  const [plan] = await db
+export async function getActivePlan(db: Executor, userId: string, locale?: Locale) {
+  const lang = await resolveLocale(db, userId, locale);
+  const [row] = await db
     .select({
       id: growthPlans.id,
       title: growthPlans.title,
@@ -42,6 +46,7 @@ export async function getActivePlan(db: Executor, userId: string) {
       ninetyDayGoal: growthPlans.ninetyDayGoal,
       primaryGoalKey: goals.key,
       primaryGoalName: goals.name,
+      primaryGoalTr: goals.translations,
       primarySkillId: goals.skillId,
     })
     .from(growthPlans)
@@ -49,20 +54,30 @@ export async function getActivePlan(db: Executor, userId: string) {
     .where(and(eq(growthPlans.userId, userId), eq(growthPlans.status, "active")))
     .orderBy(desc(growthPlans.createdAt))
     .limit(1);
-  if (!plan) return null;
+  if (!row) return null;
+  const { primaryGoalTr, ...plan } = row;
+  plan.primaryGoalName = tr(primaryGoalTr, lang, "name", plan.primaryGoalName);
 
-  const secondary = await db
-    .select({ key: goals.key, name: goals.name })
-    .from(userGoals)
-    .innerJoin(goals, eq(goals.id, userGoals.goalId))
-    .where(and(eq(userGoals.userId, userId), eq(userGoals.priority, "secondary")))
-    .orderBy(asc(goals.order));
+  const secondary = (
+    await db
+      .select({ key: goals.key, name: goals.name, translations: goals.translations })
+      .from(userGoals)
+      .innerJoin(goals, eq(goals.id, userGoals.goalId))
+      .where(and(eq(userGoals.userId, userId), eq(userGoals.priority, "secondary")))
+      .orderBy(asc(goals.order))
+  ).map((g) => localize(g, lang));
 
   const [primarySkill] = plan.primarySkillId
-    ? await db.select({ key: skills.key, name: skills.name }).from(skills).where(eq(skills.id, plan.primarySkillId))
+    ? await db.select({ key: skills.key, name: skills.name, translations: skills.translations }).from(skills).where(eq(skills.id, plan.primarySkillId))
     : [];
 
-  return { ...plan, secondaryGoals: secondary, primarySkill: primarySkill ?? { key: "communication", name: "Communication" } };
+  return {
+    ...plan,
+    secondaryGoals: secondary,
+    primarySkill: primarySkill
+      ? { key: primarySkill.key, name: tr(primarySkill.translations, lang, "name", primarySkill.name) }
+      : { key: "communication", name: skillName("communication", lang) },
+  };
 }
 
 export type ActivePlan = NonNullable<Awaited<ReturnType<typeof getActivePlan>>>;
@@ -87,29 +102,39 @@ export interface OutlineModule {
   completed: number;
 }
 
-export async function getJourneyOutline(db: Executor, userId: string, journeyId: string, today: ISODate) {
-  const [journey] = await db.select().from(journeys).where(eq(journeys.id, journeyId));
-  if (!journey) return null;
+export async function getJourneyOutline(db: Executor, userId: string, journeyId: string, today: ISODate, locale?: Locale) {
+  const lang = await resolveLocale(db, userId, locale);
+  const [journeyRow] = await db.select().from(journeys).where(eq(journeys.id, journeyId));
+  if (!journeyRow) return null;
+  const journey = localize(journeyRow, lang);
 
-  const rows = await db
+  const rows = (
+    await db
     .select({
       moduleId: journeyModules.id,
       moduleTitle: journeyModules.title,
       moduleDescription: journeyModules.description,
       moduleOrder: journeyModules.order,
+      moduleTr: journeyModules.translations,
       id: lessons.id,
       slug: lessons.slug,
       title: lessons.title,
       description: lessons.description,
       estimatedMinutes: lessons.estimatedMinutes,
       category: lessons.category,
+      translations: lessons.translations,
     })
     .from(journeyModules)
     .innerJoin(lessons, eq(lessons.moduleId, journeyModules.id))
     .where(
       and(eq(journeyModules.journeyId, journeyId), eq(journeyModules.status, "published"), eq(lessons.status, "published")),
     )
-    .orderBy(asc(journeyModules.order), asc(lessons.order));
+    .orderBy(asc(journeyModules.order), asc(lessons.order))
+  ).map(({ moduleTr, ...r }) => ({
+    ...localize(r, lang),
+    moduleTitle: tr(moduleTr, lang, "title", r.moduleTitle),
+    moduleDescription: tr(moduleTr, lang, "description", r.moduleDescription),
+  }));
 
   const ids = rows.map((r) => r.id);
   const progressRows = ids.length
@@ -126,7 +151,7 @@ export async function getJourneyOutline(db: Executor, userId: string, journeyId:
   const progress = new Map<string, LessonProgressRef>(progressRows.map((p) => [p.lessonId, p]));
   // Today's lesson is already "used" if one was finished today in another journey
   // (e.g. the journey just completed) — one lesson per day across the whole plan.
-  const [elsewhere] = await db
+  const [elsewhereRow] = await db
     .select({
       completedOn: lessonProgress.completedOn,
       id: lessons.id,
@@ -135,7 +160,9 @@ export async function getJourneyOutline(db: Executor, userId: string, journeyId:
       description: lessons.description,
       estimatedMinutes: lessons.estimatedMinutes,
       category: lessons.category,
+      translations: lessons.translations,
       moduleTitle: journeyModules.title,
+      moduleTr: journeyModules.translations,
     })
     .from(lessonProgress)
     .innerJoin(lessons, eq(lessons.id, lessonProgress.lessonId))
@@ -149,6 +176,9 @@ export async function getJourneyOutline(db: Executor, userId: string, journeyId:
       ),
     )
     .limit(1);
+  const elsewhere = elsewhereRow
+    ? (({ moduleTr, ...r }) => ({ ...localize(r, lang), moduleTitle: tr(moduleTr, lang, "title", r.moduleTitle) }))(elsewhereRow)
+    : undefined;
   const resolution = resolveToday(ids, progress, today, { doneElsewhereToday: Boolean(elsewhere) });
 
   const modules: OutlineModule[] = [];
@@ -233,8 +263,9 @@ export async function countDueReviews(db: Executor, userId: string, today: ISODa
 }
 
 /** Missions: today's committed one plus any earlier ones still awaiting a check-in. */
-export async function getOpenMissions(db: Executor, userId: string) {
-  return db
+export async function getOpenMissions(db: Executor, userId: string, locale?: Locale) {
+  const lang = await resolveLocale(db, userId, locale);
+  const rows = await db
     .select({
       attemptId: dailyActionAttempts.id,
       actionDate: dailyActionAttempts.actionDate,
@@ -242,6 +273,7 @@ export async function getOpenMissions(db: Executor, userId: string) {
       outcome: dailyActionAttempts.outcome,
       title: dailyActions.title,
       description: dailyActions.description,
+      translations: dailyActions.translations,
       estimatedMinutes: dailyActions.estimatedMinutes,
       difficulty: dailyActions.difficulty,
       lessonId: dailyActions.lessonId,
@@ -251,10 +283,12 @@ export async function getOpenMissions(db: Executor, userId: string) {
     .where(and(eq(dailyActionAttempts.userId, userId), inArray(dailyActionAttempts.status, ["committed", "not_yet"])))
     .orderBy(desc(dailyActionAttempts.actionDate))
     .limit(5);
+  return rows.map((r) => localize(r, lang));
 }
 
 /** The mission assigned on a given day, whatever its status. */
-export async function getMissionOn(db: Executor, userId: string, day: ISODate) {
+export async function getMissionOn(db: Executor, userId: string, day: ISODate, locale?: Locale) {
+  const lang = await resolveLocale(db, userId, locale);
   const [row] = await db
     .select({
       attemptId: dailyActionAttempts.id,
@@ -263,6 +297,7 @@ export async function getMissionOn(db: Executor, userId: string, day: ISODate) {
       outcome: dailyActionAttempts.outcome,
       title: dailyActions.title,
       description: dailyActions.description,
+      translations: dailyActions.translations,
       estimatedMinutes: dailyActions.estimatedMinutes,
       difficulty: dailyActions.difficulty,
       lessonId: dailyActions.lessonId,
@@ -272,12 +307,12 @@ export async function getMissionOn(db: Executor, userId: string, day: ISODate) {
     .where(and(eq(dailyActionAttempts.userId, userId), eq(dailyActionAttempts.actionDate, day)))
     .orderBy(desc(dailyActionAttempts.createdAt))
     .limit(1);
-  return row ?? null;
+  return row ? localize(row, lang) : null;
 }
 
-export async function getMissionForLesson(db: Executor, lessonId: string) {
+export async function getMissionForLesson(db: Executor, lessonId: string, locale?: Locale) {
   const [row] = await db.select().from(dailyActions).where(and(eq(dailyActions.lessonId, lessonId), eq(dailyActions.status, "published")));
-  return row ?? null;
+  return row ? localize(row, await requestLocale(locale)) : null;
 }
 
 /**

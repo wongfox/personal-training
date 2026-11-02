@@ -2,70 +2,77 @@
 
 /*
  * Personal Growth OS — design tokens.
- * Warm paper + ink, one ember accent used sparingly (streaks, progress, "today").
+ * Warm cream + deep forest green; a soft "sun" tone for streaks and highlights.
+ * Generous radii (28px cards, 22px tiles, pill buttons), quiet shadows.
  */
 :root {
-  --bg: #f4f2ed;
-  --surface: #ffffff;
-  --surface-2: #ebe8e1;
-  --ink: #16150f;
-  --ink-2: #4b4943;
-  --muted: #858178;
-  --line: #e1ddd3;
-  --accent: #d4532a;
-  --accent-ink: #ffffff;
-  --accent-soft: #f7e4da;
-  --success: #2f7a58;
-  --success-soft: #dcefe4;
-  --danger: #b4352c;
-  --danger-soft: #f6dedb;
-  --shadow: 0 1px 2px rgb(22 21 15 / 0.04), 0 8px 24px -12px rgb(22 21 15 / 0.12);
-  --hero: #16150f;
-  --hero-ink: #f4f2ed;
+  --bg: #f4efe6;
+  --surface: #fffcf7;
+  --surface-2: #ece6da;
+  --ink: #1d2620;
+  --ink-2: #4a564d;
+  --muted: #858c84;
+  --line: #e2dacb;
+  --accent: #2e4a3b;
+  --accent-ink: #f6f1e7;
+  --accent-soft: #dce6da;
+  --success: #3d7a55;
+  --success-soft: #dcebdf;
+  --danger: #b4483c;
+  --danger-soft: #f6dfd9;
+  --shadow: 0 1px 2px rgb(29 38 32 / 0.04), 0 10px 30px -14px rgb(29 38 32 / 0.18);
+  --hero: #2e4a3b;
+  --hero-ink: #f6f1e7;
+  --sun: #d9844a;
+  --sun-soft: #f7e2d2;
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0f0f0d;
-    --surface: #181815;
-    --surface-2: #23221e;
-    --ink: #f2f0e9;
-    --ink-2: #bebab0;
-    --muted: #8a867c;
-    --line: #2c2b26;
-    --accent: #f0713f;
-    --accent-ink: #160b05;
-    --accent-soft: #3b2117;
-    --success: #5cbf8e;
-    --success-soft: #16301f;
-    --danger: #f07a6f;
-    --danger-soft: #3a1a17;
-    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.6);
-    --hero: #27241e;
-    --hero-ink: #f2f0e9;
+    --bg: #111613;
+    --surface: #19201b;
+    --surface-2: #232b25;
+    --ink: #edf0e8;
+    --ink-2: #b8c0b5;
+    --muted: #848c82;
+    --line: #2b342d;
+    --accent: #9dc3a6;
+    --accent-ink: #0f1712;
+    --accent-soft: #243628;
+    --success: #6cc08f;
+    --success-soft: #17301f;
+    --danger: #ee7d70;
+    --danger-soft: #3a1b17;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 10px 30px -14px rgb(0 0 0 / 0.7);
+    --hero: #20352a;
+    --hero-ink: #edf0e8;
+    --sun: #f0a877;
+    --sun-soft: #3a2a1e;
     color-scheme: dark;
   }
 }
 
 :root[data-theme="dark"] {
-  --bg: #0f0f0d;
-  --surface: #181815;
-  --surface-2: #23221e;
-  --ink: #f2f0e9;
-  --ink-2: #bebab0;
-  --muted: #8a867c;
-  --line: #2c2b26;
-  --accent: #f0713f;
-  --accent-ink: #160b05;
-  --accent-soft: #3b2117;
-  --success: #5cbf8e;
-  --success-soft: #16301f;
-  --danger: #f07a6f;
-  --danger-soft: #3a1a17;
-  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.6);
-  --hero: #27241e;
-  --hero-ink: #f2f0e9;
+  --bg: #111613;
+  --surface: #19201b;
+  --surface-2: #232b25;
+  --ink: #edf0e8;
+  --ink-2: #b8c0b5;
+  --muted: #848c82;
+  --line: #2b342d;
+  --accent: #9dc3a6;
+  --accent-ink: #0f1712;
+  --accent-soft: #243628;
+  --success: #6cc08f;
+  --success-soft: #17301f;
+  --danger: #ee7d70;
+  --danger-soft: #3a1b17;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 10px 30px -14px rgb(0 0 0 / 0.7);
+  --hero: #20352a;
+  --hero-ink: #edf0e8;
+  --sun: #f0a877;
+  --sun-soft: #3a2a1e;
   color-scheme: dark;
 }
 
@@ -82,6 +89,8 @@
   --color-accent-soft: var(--accent-soft);
   --color-hero: var(--hero);
   --color-hero-ink: var(--hero-ink);
+  --color-sun: var(--sun);
+  --color-sun-soft: var(--sun-soft);
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
   --color-danger: var(--danger);

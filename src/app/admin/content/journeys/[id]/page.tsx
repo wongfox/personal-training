@@ -1,20 +1,26 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { getTranslator } from "@/i18n/server";
 import { requirePermission } from "@/server/auth/current-user";
 import { can } from "@/server/auth/rbac";
 import { getDb } from "@/server/db";
 import { NotFoundError } from "@/server/errors";
-import { getJourneyAdmin } from "@/server/services/admin";
+import { getJourneyAdmin, hasSpanish } from "@/server/services/admin";
 import { uuidSchema } from "@/server/validation";
 import { saveJourneyAction, saveModuleAction } from "../../../actions";
 import { AdminForm } from "../../../form";
-import { Input, isLiveLocked, LiveNotice, MetaFields, PageHeader, Panel, StatusBadge, Table } from "../../../ui";
+import { LangTabs } from "../../../lang-tabs";
+import { EsMissingBadge, Input, isLiveLocked, LiveNotice, MetaFields, PageHeader, Panel, PanelTitle, SpanishIntro, SpanishMetaFields, spanishOf, StatusBadge, Table } from "../../../ui";
 
-export const metadata: Metadata = { title: "Journey" };
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getTranslator();
+  return { title: t("admin.journey.metaTitle") };
+}
 
 export default async function JourneyAdminPage({ params }: PageProps<"/admin/content/journeys/[id]">) {
   const user = await requirePermission("content:read");
+  const { t } = await getTranslator();
   const { id } = await params;
   if (!uuidSchema.safeParse(id).success) notFound();
   let data;
@@ -30,18 +36,32 @@ export default async function JourneyAdminPage({ params }: PageProps<"/admin/con
 
   return (
     <div className="max-w-5xl space-y-6">
-      <PageHeader title={journey.title} crumbs={[{ href: "/admin/content", label: "Content" }]} action={<StatusBadge status={journey.status} />} />
+      <PageHeader
+        title={journey.title}
+        crumbs={[{ href: "/admin/content", label: t("admin.content.title") }]}
+        action={
+          <div className="flex items-center gap-2">
+            {!hasSpanish(journey.translations) && <EsMissingBadge />}
+            <StatusBadge status={journey.status} />
+          </div>
+        }
+      />
 
       <section>
-        <h2 className="mb-3 text-[15px] font-semibold">Modules</h2>
-        <Table head={["#", "Module", "Status", "Lessons", "Minutes"]}>
+        <PanelTitle className="mb-3">{t("admin.journey.modules")}</PanelTitle>
+        <Table
+          head={[t("admin.journey.head.order"), t("admin.journey.head.module"), t("admin.journey.head.status"), t("admin.journey.head.lessons"), t("admin.journey.head.minutes")]}
+        >
           {modules.map((m) => (
             <tr key={m.id} className="hover:bg-surface-2">
               <td className="px-4 py-3 tabular-nums text-muted">{m.order}</td>
               <td className="px-4 py-3">
-                <Link href={`/admin/content/modules/${m.id}`} className="font-medium hover:underline">
-                  {m.title}
-                </Link>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link href={`/admin/content/modules/${m.id}`} className="font-medium hover:underline">
+                    {m.title}
+                  </Link>
+                  {!m.hasEs && <EsMissingBadge />}
+                </div>
               </td>
               <td className="px-4 py-3">
                 <StatusBadge status={m.status} />
@@ -59,17 +79,35 @@ export default async function JourneyAdminPage({ params }: PageProps<"/admin/con
             <LiveNotice />
           ) : (
             <Panel>
-              <h2 className="mb-4 text-[15px] font-semibold">Edit journey</h2>
+              <PanelTitle className="mb-4">{t("admin.journey.edit")}</PanelTitle>
               <AdminForm action={saveJourneyAction} hidden={{ id: journey.id }}>
-                <MetaFields values={journey} canPublish={canPublish} minutes={{ min: 1, max: 1000 }} />
-                <Input label="Subtitle" name="subtitle" defaultValue={journey.subtitle ?? ""} />
+                <LangTabs
+                  esMissing={!hasSpanish(journey.translations)}
+                  en={
+                    <>
+                      <MetaFields values={journey} canPublish={canPublish} minutes={{ min: 1, max: 1000 }} />
+                      <Input label={t("admin.fields.subtitle")} name="subtitle" defaultValue={journey.subtitle ?? ""} />
+                    </>
+                  }
+                  es={
+                    <>
+                      <SpanishIntro />
+                      <SpanishMetaFields english={journey} spanish={spanishOf(journey)} withSubtitle />
+                    </>
+                  }
+                />
               </AdminForm>
             </Panel>
           )}
           <Panel>
-            <h2 className="mb-4 text-[15px] font-semibold">Add a module</h2>
-            <AdminForm action={saveModuleAction} hidden={{ journeyId: journey.id }} submitLabel="Add module">
-              <MetaFields canPublish={canPublish} withSlug={false} values={{ order: modules.length + 1, category: journey.category, difficulty: journey.difficulty, estimatedMinutes: 30 }} minutes={{ min: 1, max: 600 }} />
+            <PanelTitle className="mb-4">{t("admin.journey.addModule")}</PanelTitle>
+            <AdminForm action={saveModuleAction} hidden={{ journeyId: journey.id }} submitLabel={t("admin.journey.addModuleSubmit")}>
+              <MetaFields
+                canPublish={canPublish}
+                withSlug={false}
+                values={{ order: modules.length + 1, category: journey.category, difficulty: journey.difficulty, estimatedMinutes: 30 }}
+                minutes={{ min: 1, max: 600 }}
+              />
             </AdminForm>
           </Panel>
         </div>

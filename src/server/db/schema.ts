@@ -27,6 +27,7 @@ import {
 } from "drizzle-orm/pg-core";
 import type {
   ActionReflectionAnswers,
+  ContentTranslations,
   AssessmentOption,
   ExerciseConfig,
   ExerciseFeedback,
@@ -36,6 +37,8 @@ import type {
 } from "./types";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
+/** Per-locale overrides of human-readable fields, e.g. { es: { title: "…" } }. English lives in the columns. */
+const translations = () => jsonb("translations").$type<ContentTranslations>().notNull().default({});
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 const updatedAt = () =>
   timestamp("updated_at", { withTimezone: true })
@@ -218,6 +221,8 @@ export const profiles = pgTable("profiles", {
   displayName: text("display_name").notNull(),
   headline: text("headline"),
   timezone: text("timezone").notNull().default("UTC"),
+  /** UI and content language: "en" | "es". */
+  locale: text("locale").notNull().default("en"),
   totalXp: integer("total_xp").notNull().default(0),
   onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
   createdAt: createdAt(),
@@ -243,6 +248,7 @@ export const skills = pgTable("skills", {
   name: text("name").notNull(),
   description: text("description"),
   order: integer("order").notNull().default(0),
+  translations: translations(),
 });
 
 export const goals = pgTable("goals", {
@@ -252,6 +258,7 @@ export const goals = pgTable("goals", {
   description: text("description"),
   skillId: uuid("skill_id").references(() => skills.id, { onDelete: "set null" }),
   order: integer("order").notNull().default(0),
+  translations: translations(),
 });
 
 export const userGoals = pgTable(
@@ -281,6 +288,7 @@ export const assessmentQuestions = pgTable("assessment_questions", {
   isRequired: boolean("is_required").notNull().default(true),
   order: integer("order").notNull().default(0),
   status: contentStatus("status").notNull().default("published"),
+  translations: translations(),
 });
 
 export const assessments = pgTable(
@@ -325,6 +333,7 @@ const contentColumns = () => ({
   order: integer("order").notNull().default(0),
   status: contentStatus("status").notNull().default("draft"),
   publishedAt: timestamp("published_at", { withTimezone: true }),
+  translations: translations(),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -405,6 +414,7 @@ export const quizQuestions = pgTable(
     /** Stable key of the concept tested — drives spaced repetition. */
     conceptKey: text("concept_key").notNull(),
     order: integer("order").notNull().default(0),
+    translations: translations(),
   },
   (t) => [index("quiz_questions_quiz_idx").on(t.quizId)],
 );
@@ -729,6 +739,7 @@ export const achievements = pgTable("achievements", {
   description: text("description").notNull(),
   xpReward: integer("xp_reward").notNull().default(0),
   order: integer("order").notNull().default(0),
+  translations: translations(),
 });
 
 export const userAchievements = pgTable(

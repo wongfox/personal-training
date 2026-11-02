@@ -61,18 +61,23 @@ export function eachDay(from: ISODate, to: ISODate): ISODate[] {
   return out;
 }
 
-export function weekdayShort(date: ISODate): string {
-  return toUTC(date).toLocaleDateString("en-US", { weekday: "narrow", timeZone: "UTC" });
+const INTL: Record<string, string> = { en: "en-US", es: "es-PE" };
+
+export function weekdayShort(date: ISODate, locale = "en", width: "narrow" | "short" = "narrow"): string {
+  const s = toUTC(date).toLocaleDateString(INTL[locale] ?? "en-US", { weekday: width, timeZone: "UTC" });
+  return s.charAt(0).toUpperCase() + s.slice(1).replace(".", "");
 }
 
-export function formatDay(date: ISODate, opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }): string {
-  return toUTC(date).toLocaleDateString("en-US", { ...opts, timeZone: "UTC" });
+export function formatDay(date: ISODate, opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }, locale = "en"): string {
+  const s = toUTC(date).toLocaleDateString(INTL[locale] ?? "en-US", { ...opts, timeZone: "UTC" });
+  return locale === "es" ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
-export function greeting(timeZone: string, now: Date = new Date()): string {
+/** "morning" | "afternoon" | "evening" — the caller translates it (common.greeting.*). */
+export function greetingPart(timeZone: string, now: Date = new Date()): "morning" | "afternoon" | "evening" {
   const h = localHour(timeZone, now);
-  if (h < 5) return "Good evening";
-  if (h < 12) return "Good morning";
-  if (h < 18) return "Good afternoon";
-  return "Good evening";
+  if (h < 5) return "evening";
+  if (h < 12) return "morning";
+  if (h < 18) return "afternoon";
+  return "evening";
 }

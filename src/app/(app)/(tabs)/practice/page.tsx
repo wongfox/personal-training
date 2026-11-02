@@ -1,106 +1,158 @@
-import { ArrowRight, Brain, ListOrdered, MessagesSquare, Mic, Scale, Sparkles, Users, Wand2 } from "lucide-react";
+import { ArrowRight, Brain, Clock, ListOrdered, MessagesSquare, Mic, Scale, Sparkles, Users, Wand2, Zap } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import type { ComponentType } from "react";
+import { LeafSprig } from "@/components/scene";
+import { getTranslator } from "@/i18n/server";
+import type { TFunction } from "@/i18n/translate";
 import { cn } from "@/lib/cn";
-import { CATEGORIES, categoryName } from "@/lib/taxonomy";
+import { CATEGORIES, categorySkill, SKILLS } from "@/lib/taxonomy";
 import { requireUser } from "@/server/auth/current-user";
 import { getDb } from "@/server/db";
 import { listPracticeTools, type PracticeToolSummary } from "@/server/services/catalog";
 
-export const metadata: Metadata = { title: "Practice" };
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getTranslator();
+  return { title: t("practice.title") };
+}
 
-const FAMILY_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
-  "Conversation Simulator": MessagesSquare,
-  "Networking Practice": Users,
-  "Presentation Trainer": Mic,
-  "Thought Organizer": ListOrdered,
-  "Story Builder": Sparkles,
-  "Decision Framework": Scale,
-  "Memory Trainer": Brain,
-};
+type Icon = ComponentType<{ size?: number; strokeWidth?: number; "aria-hidden"?: boolean }>;
 
-const FAMILY_BY_SLUG: [RegExp, string][] = [
-  [/conversation/, "Conversation Simulator"],
-  [/networking/, "Networking Practice"],
-  [/presentation/, "Presentation Trainer"],
-  [/organizer/, "Thought Organizer"],
-  [/story/, "Story Builder"],
-  [/decision/, "Decision Framework"],
-  [/memory/, "Memory Trainer"],
-  [/hedge/, "Hedge Hunter"],
+/** Tool families, recognised by slug (titles are localized). */
+const FAMILIES: { key: string; match: RegExp; icon: Icon }[] = [
+  { key: "conversation", match: /conversation/, icon: MessagesSquare },
+  { key: "networking", match: /networking/, icon: Users },
+  { key: "presentation", match: /presentation/, icon: Mic },
+  { key: "organizer", match: /organizer/, icon: ListOrdered },
+  { key: "story", match: /story/, icon: Sparkles },
+  { key: "decision", match: /decision/, icon: Scale },
+  { key: "memory", match: /memory/, icon: Brain },
+  { key: "hedge", match: /hedge/, icon: Zap },
 ];
 
-function family(tool: PracticeToolSummary): string {
-  const bySlug = FAMILY_BY_SLUG.find(([re]) => re.test(tool.slug));
-  if (bySlug) return bySlug[1];
+function family(tool: PracticeToolSummary, t: TFunction): { label: string; icon: Icon } {
+  const known = FAMILIES.find((f) => f.match.test(tool.slug));
+  if (known) return { label: t(`practice.families.${known.key}`), icon: known.icon };
   const prefix = tool.title.split(":")[0].trim();
-  return prefix !== tool.title ? prefix : "Quick drills";
+  return { label: prefix !== tool.title ? prefix : t("practice.families.quickDrills"), icon: Wand2 };
+}
+
+/** "Family: The scenario" → "The scenario". */
+function shortTitle(title: string): string {
+  return title.includes(":") ? title.split(":").slice(1).join(":").trim() : title;
 }
 
 export default async function PracticePage({ searchParams }: PageProps<"/practice">) {
   const user = await requireUser();
   const { category } = await searchParams;
   const active = typeof category === "string" ? category : undefined;
-  const tools = await listPracticeTools(getDb(), user.id);
-  const used = new Set(tools.map((t) => t.category));
-  const visible = active ? tools.filter((t) => t.category === active) : tools;
+  const [tools, { t }] = await Promise.all([listPracticeTools(getDb(), user.id), getTranslator()]);
+  const used = new Set(tools.map((tool) => tool.category));
+  const visible = active ? tools.filter((tool) => tool.category === active) : tools;
 
-  const families = new Map<string, PracticeToolSummary[]>();
-  for (const t of visible) {
-    const f = family(t);
-    families.set(f, [...(families.get(f) ?? []), t]);
+  // One featured tool (the first you haven't tried yet), then the rest grouped by skill.
+  const featured = visible.find((tool) => tool.attempts === 0) ?? visible[0];
+  const bySkill = new Map<string, PracticeToolSummary[]>();
+  for (const tool of visible) {
+    if (tool === featured) continue;
+    const skill = categorySkill(tool.category);
+    bySkill.set(skill, [...(bySkill.get(skill) ?? []), tool]);
   }
+  const groups = SKILLS.filter((s) => bySkill.has(s.key)).map((s) => ({ key: s.key, tools: bySkill.get(s.key)! }));
+
+  const meta = (tool: PracticeToolSummary) =>
+    [t("common.minutes", { count: tool.estimatedMinutes }), tool.attempts > 0 && tool.bestScore !== null ? t("practice.best", { score: tool.bestScore }) : null]
+      .filter(Boolean)
+      .join(" · ");
 
   return (
     <div className="space-y-7">
       <header className="animate-fade">
-        <h1 className="font-display text-[36px] leading-none">Practice</h1>
-        <p className="mt-2 text-[15px] text-ink-2">Rehearse the moments that matter before they happen.</p>
+        <h1 className="font-display text-[36px] leading-none">{t("practice.title")}</h1>
+        <p className="mt-2 text-[15px] text-ink-2">{t("practice.subtitle")}</p>
       </header>
 
-      <nav aria-label="Categories" className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5 lg:mx-0 lg:flex-wrap lg:px-0">
+      <nav aria-label={t("practice.categories")} className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5 lg:mx-0 lg:flex-wrap lg:px-0">
         <Chip href="/practice" active={!active}>
-          All
+          {t("practice.all")}
         </Chip>
         {CATEGORIES.filter((c) => used.has(c.key)).map((c) => (
           <Chip key={c.key} href={`/practice?category=${c.key}`} active={active === c.key}>
-            {c.name}
+            {t(`taxonomy.categories.${c.key}`)}
           </Chip>
         ))}
       </nav>
 
-      {[...families.entries()].map(([name, list]) => {
-        const Icon = FAMILY_ICONS[name] ?? Wand2;
-        return (
-          <section key={name} aria-labelledby={`fam-${name}`} className="animate-rise">
-            <div className="mb-3 flex items-center gap-2.5">
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-ink text-bg">
-                <Icon size={16} />
-              </span>
-              <h2 id={`fam-${name}`} className="text-[17px] font-semibold">
-                {name}
-              </h2>
-            </div>
-            <ul className="divide-y divide-line overflow-hidden rounded-3xl bg-surface shadow-card">
-              {list.map((t) => (
-                <li key={t.id}>
-                  <Link href={`/practice/${t.slug}`} className="flex items-center gap-3 px-5 py-4 transition hover:bg-surface-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[15px] font-medium leading-snug">{t.title.includes(":") ? t.title.split(":").slice(1).join(":").trim() : t.title}</p>
-                      <p className="mt-1 text-[12px] text-muted">
-                        {categoryName(t.category)} · {t.estimatedMinutes} min
-                        {t.attempts > 0 && ` · best ${t.bestScore}`}
-                      </p>
-                    </div>
-                    <ArrowRight size={17} className="shrink-0 text-muted" />
+      {featured ? (
+        <FeaturedCard tool={featured} t={t} meta={meta(featured)} />
+      ) : (
+        <p className="rounded-[28px] border border-dashed border-line px-6 py-10 text-center text-[15px] text-ink-2">{t("practice.empty")}</p>
+      )}
+
+      {groups.map(({ key, tools: list }) => (
+        <section key={key} aria-labelledby={`skill-${key}`} className="animate-rise">
+          <h2 id={`skill-${key}`} className="mb-3 px-1 text-[13px] font-semibold uppercase tracking-[0.12em] text-muted">
+            {t(`taxonomy.skills.${key}`)}
+          </h2>
+          <ul className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+            {list.map((tool) => {
+              const fam = family(tool, t);
+              const Icon = fam.icon;
+              return (
+                <li key={tool.id}>
+                  <Link
+                    href={`/practice/${tool.slug}`}
+                    className="group flex h-full flex-col rounded-[22px] bg-surface p-4 shadow-card transition hover:-translate-y-0.5 active:scale-[0.98]"
+                  >
+                    <span className="grid h-11 w-11 place-items-center rounded-2xl bg-accent-soft text-accent">
+                      <Icon size={20} strokeWidth={1.8} aria-hidden />
+                    </span>
+                    <span className="mt-3 block truncate text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">{fam.label}</span>
+                    <span className="mt-0.5 line-clamp-3 flex-1 text-[15px] font-semibold leading-snug">{shortTitle(tool.title)}</span>
+                    <span className="mt-2 flex items-center gap-1 text-[12px] text-muted">
+                      <Clock size={12} aria-hidden /> {meta(tool)}
+                    </span>
                   </Link>
                 </li>
-              ))}
-            </ul>
-          </section>
-        );
-      })}
+              );
+            })}
+          </ul>
+        </section>
+      ))}
     </div>
+  );
+}
+
+function FeaturedCard({ tool, t, meta }: { tool: PracticeToolSummary; t: TFunction; meta: string }) {
+  const fam = family(tool, t);
+  const Icon = fam.icon;
+  return (
+    <Link
+      href={`/practice/${tool.slug}`}
+      className="relative isolate block overflow-hidden rounded-[28px] bg-hero p-6 text-hero-ink shadow-card transition hover:brightness-110 animate-rise"
+    >
+      <LeafSprig className="absolute -right-4 -bottom-5 -z-10 h-36 w-36 text-hero-ink/20" />
+      <div className="flex items-center gap-3">
+        <span className="grid h-11 w-11 place-items-center rounded-2xl bg-hero-ink/12 text-hero-ink">
+          <Icon size={20} strokeWidth={1.8} aria-hidden />
+        </span>
+        <span className="min-w-0">
+          <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-hero-ink/70">{t("practice.featured")}</span>
+          <span className="block truncate text-[13px] text-hero-ink/85">{fam.label}</span>
+        </span>
+      </div>
+      <span className="mt-4 block max-w-[85%] font-display text-[28px] leading-[1.08]">{shortTitle(tool.title)}</span>
+      {tool.description && <span className="mt-2 line-clamp-2 block max-w-[90%] text-[14px] text-hero-ink/75">{tool.description}</span>}
+      <span className="mt-5 flex items-center justify-between gap-3">
+        <span className="text-[13px] text-hero-ink/75">{meta}</span>
+        <span className="inline-flex h-11 items-center gap-2 rounded-full bg-hero-ink pr-1.5 pl-4 text-[14px] font-semibold text-hero">
+          {t("practice.featuredCta")}
+          <span className="grid h-8 w-8 place-items-center rounded-full bg-hero text-hero-ink">
+            <ArrowRight size={16} aria-hidden />
+          </span>
+        </span>
+      </span>
+    </Link>
   );
 }
 
@@ -111,8 +163,8 @@ function Chip({ href, active, children }: { href: string; active: boolean; child
       scroll={false}
       aria-current={active ? "true" : undefined}
       className={cn(
-        "shrink-0 rounded-full border px-3.5 py-2 text-[13px] font-medium transition",
-        active ? "border-ink bg-ink text-bg" : "border-line bg-surface text-ink-2 hover:text-ink",
+        "shrink-0 rounded-full px-4 py-2 text-[13px] font-semibold transition",
+        active ? "bg-hero text-hero-ink shadow-card" : "bg-surface text-ink-2 shadow-card hover:text-ink",
       )}
     >
       {children}

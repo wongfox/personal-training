@@ -1,0 +1,21 @@
+export const practice = {
+  title: "Practice",
+  subtitle: "Rehearse the moments that matter before they happen.",
+  categories: "Categories",
+  all: "All",
+  featured: "Try this next",
+  featuredCta: "Start practising",
+  best: "best {score}",
+  empty: "No practice tools in this category yet.",
+  families: {
+    conversation: "Conversation Simulator",
+    networking: "Networking Practice",
+    presentation: "Presentation Trainer",
+    organizer: "Thought Organizer",
+    story: "Story Builder",
+    decision: "Decision Framework",
+    memory: "Memory Trainer",
+    hedge: "Hedge Hunter",
+    quickDrills: "Quick drills",
+  },
+};

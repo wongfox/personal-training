@@ -30,6 +30,8 @@ import { reflectionFeedback } from "@/server/engine/coach-insight";
 import { InvalidResponseError, scoreExercise } from "@/server/engine/exercise-scoring";
 import { initialReview, scaledXp, scheduleReview, SKILL_GAINS, XP } from "@/server/engine/progression";
 import { NotFoundError, ValidationError } from "@/server/errors";
+import { type Locale, requestLocale, resolveLocale } from "@/server/i18n/locale";
+import { localize, tr } from "@/server/i18n/localize";
 import { type ActivityResult, mergeResults, recordActivity } from "./rewards";
 import { getJourneyOutline } from "./training";
 
@@ -42,10 +44,17 @@ function wordCount(text: string): number {
 
 /* ─────────────────────────── Access ─────────────────────────── */
 
-async function lessonContext(db: Executor, lessonIdOrSlug: string) {
+async function lessonContext(db: Executor, lessonIdOrSlug: string, lang: Locale) {
   const isUuid = /^[0-9a-f-]{36}$/i.test(lessonIdOrSlug);
   const [row] = await db
-    .select({ lesson: lessons, moduleTitle: journeyModules.title, journeyId: journeys.id, journeyTitle: journeys.title })
+    .select({
+      lesson: lessons,
+      moduleTitle: journeyModules.title,
+      moduleTr: journeyModules.translations,
+      journeyId: journeys.id,
+      journeyTitle: journeys.title,
+      journeyTr: journeys.translations,
+    })
     .from(lessons)
     .innerJoin(journeyModules, eq(journeyModules.id, lessons.moduleId))
     .innerJoin(journeys, eq(journeys.id, journeyModules.journeyId))
@@ -56,18 +65,31 @@ async function lessonContext(db: Executor, lessonIdOrSlug: string) {
         eq(journeys.status, "published"),
       ),
     );
-  return row ?? null;
+  if (!row) return null;
+  return {
+    lesson: localize(row.lesson, lang),
+    moduleTitle: tr(row.moduleTr, lang, "title", row.moduleTitle),
+    journeyId: row.journeyId,
+    journeyTitle: tr(row.journeyTr, lang, "title", row.journeyTitle),
+  };
 }
 
 export type LessonAccess = "completed" | "today" | "locked" | "not_enrolled";
 
 /** A lesson is open when it's completed or it's today's lesson in an enrolled journey. */
-export async function lessonAccess(db: Executor, userId: string, lessonId: string, journeyId: string, today: ISODate): Promise<{ access: LessonAccess; outline: Awaited<ReturnType<typeof getJourneyOutline>> }> {
+export async function lessonAccess(
+  db: Executor,
+  userId: string,
+  lessonId: string,
+  journeyId: string,
+  today: ISODate,
+  locale?: Locale,
+): Promise<{ access: LessonAccess; outline: Awaited<ReturnType<typeof getJourneyOutline>> }> {
   const [enrolled] = await db
     .select()
     .from(userJourneys)
     .where(and(eq(userJourneys.userId, userId), eq(userJourneys.journeyId, journeyId)));
-  const outline = await getJourneyOutline(db, userId, journeyId, today);
+  const outline = await getJourneyOutline(db, userId, journeyId, today, locale);
   if (!enrolled) return { access: "not_enrolled", outline };
   const state = outline?.modules.flatMap((m) => m.lessons).find((l) => l.id === lessonId)?.state;
   if (state === "completed") return { access: "completed", outline };
@@ -77,20 +99,21 @@ export async function lessonAccess(db: Executor, userId: string, lessonId: strin
   return { access: "locked", outline };
 }
 
-async function requireOpenLesson(db: Executor, userId: string, lessonId: string, today: ISODate) {
-  const ctx = await lessonContext(db, lessonId);
-  if (!ctx) throw new NotFoundError("Lesson not found.");
-  const { access } = await lessonAccess(db, userId, ctx.lesson.id, ctx.journeyId, today);
-  if (access === "locked" || access === "not_enrolled") throw new NotFoundError("This lesson isn't open yet.");
+async function requireOpenLesson(db: Executor, userId: string, lessonId: string, today: ISODate, lang: Locale) {
+  const ctx = await lessonContext(db, lessonId, lang);
+  if (!ctx) throw new NotFoundError("lessonNotFound");
+  const { access } = await lessonAccess(db, userId, ctx.lesson.id, ctx.journeyId, today, lang);
+  if (access === "locked" || access === "not_enrolled") throw new NotFoundError("lessonNotOpen");
   return ctx;
 }
 
 /* ─────────────────────────── Lesson view ─────────────────────────── */
 
-export async function getLessonForUser(db: Executor, userId: string, lessonIdOrSlug: string, today: ISODate) {
-  const ctx = await lessonContext(db, lessonIdOrSlug);
+export async function getLessonForUser(db: Executor, userId: string, lessonIdOrSlug: string, today: ISODate, locale?: Locale) {
+  const lang = await resolveLocale(db, userId, locale);
+  const ctx = await lessonContext(db, lessonIdOrSlug, lang);
   if (!ctx) return null;
-  const { access, outline } = await lessonAccess(db, userId, ctx.lesson.id, ctx.journeyId, today);
+  const { access, outline } = await lessonAccess(db, userId, ctx.lesson.id, ctx.journeyId, today, lang);
 
   const base = {
     id: ctx.lesson.id,
@@ -107,20 +130,25 @@ export async function getLessonForUser(db: Executor, userId: string, lessonIdOrS
     return { ...base, locked: true as const, nextLessonTitle: outline?.nextLesson?.title ?? null };
   }
 
-  const [exercise] = await db
+  const [exerciseRow] = await db
     .select()
     .from(exercises)
     .where(and(eq(exercises.lessonId, ctx.lesson.id), eq(exercises.status, "published")))
     .limit(1);
+  // The same localized config is used to score the attempt (prepareExercise).
+  const exercise = exerciseRow ? localize(exerciseRow, lang) : undefined;
   const [quiz] = await db.select().from(quizzes).where(and(eq(quizzes.lessonId, ctx.lesson.id), eq(quizzes.status, "published")));
   const questions = quiz
-    ? await db
-        .select({ id: quizQuestions.id, prompt: quizQuestions.prompt, options: quizQuestions.options })
-        .from(quizQuestions)
-        .where(eq(quizQuestions.quizId, quiz.id))
-        .orderBy(asc(quizQuestions.order))
+    ? (
+        await db
+          .select({ id: quizQuestions.id, prompt: quizQuestions.prompt, options: quizQuestions.options, translations: quizQuestions.translations })
+          .from(quizQuestions)
+          .where(eq(quizQuestions.quizId, quiz.id))
+          .orderBy(asc(quizQuestions.order))
+      ).map((q) => localize(q, lang))
     : [];
-  const [action] = await db.select().from(dailyActions).where(and(eq(dailyActions.lessonId, ctx.lesson.id), eq(dailyActions.status, "published")));
+  const [actionRow] = await db.select().from(dailyActions).where(and(eq(dailyActions.lessonId, ctx.lesson.id), eq(dailyActions.status, "published")));
+  const action = actionRow ? localize(actionRow, lang) : undefined;
   const [progress] = await db
     .select()
     .from(lessonProgress)
@@ -169,7 +197,8 @@ export async function saveLessonStep(
   step: number,
   secondsDelta: number,
 ): Promise<{ started: boolean }> {
-  const ctx = await requireOpenLesson(db, userId, lessonId, today);
+  // Only ids are read here, so the content language doesn't matter.
+  const ctx = await requireOpenLesson(db, userId, lessonId, today, "en");
   const seconds = Math.max(0, Math.min(600, Math.round(secondsDelta)));
   const [existing] = await db
     .select()
@@ -200,31 +229,45 @@ export interface ExerciseResult {
 
 export type PreparedExercise = Awaited<ReturnType<typeof prepareExercise>>;
 
-/** Validates access and scores a response. No writes — safe to run before slow AI enrichment. */
-export async function prepareExercise(db: Executor, userId: string, today: ISODate, exerciseId: string, rawResponse: unknown) {
-  const [exercise] = await db
+/**
+ * Validates access and scores a response. No writes — safe to run before slow AI enrichment.
+ * Scores against the config in the learner's language — the same one the
+ * lesson/practice screen rendered — and writes the feedback in that language.
+ */
+export async function prepareExercise(db: Executor, userId: string, today: ISODate, exerciseId: string, rawResponse: unknown, locale?: Locale) {
+  const lang = await resolveLocale(db, userId, locale);
+  const [row] = await db
     .select()
     .from(exercises)
     .where(and(eq(exercises.id, exerciseId), eq(exercises.status, "published")));
-  if (!exercise) throw new NotFoundError("Exercise not found.");
-  if (!exercise.isPractice) {
-    if (!exercise.lessonId) throw new NotFoundError("Exercise not found.");
-    await requireOpenLesson(db, userId, exercise.lessonId, today);
+  if (!row) throw new NotFoundError("exerciseNotFound");
+  if (!row.isPractice) {
+    if (!row.lessonId) throw new NotFoundError("exerciseNotFound");
+    await requireOpenLesson(db, userId, row.lessonId, today, lang);
   }
+  const exercise = localize(row, lang);
 
   let response = rawResponse;
-  if (exercise.config.type === "order" && rawResponse && typeof rawResponse === "object") {
-    response = { order: resolveOrderKeys(exercise.config, exercise.id, (rawResponse as { order?: unknown }).order) };
+  if (exercise.config.type === "order" && row.config.type === "order" && rawResponse && typeof rawResponse === "object") {
+    const keys = (rawResponse as { order?: unknown }).order;
+    let order = resolveOrderKeys(exercise.config, exercise.id, keys);
+    // Keys are derived from item text: if the screen was rendered in the other language
+    // (language switched mid-exercise), fall back to the English items — same order.
+    if (order.includes(-1)) {
+      const english = resolveOrderKeys(row.config, row.id, keys);
+      if (!english.includes(-1)) order = english;
+    }
+    response = { order };
   }
 
   let feedback: ExerciseFeedback;
   try {
-    feedback = scoreExercise(exercise.config, response);
+    feedback = scoreExercise(exercise.config, response, lang);
   } catch (e) {
     if (e instanceof InvalidResponseError) throw new ValidationError(e.message);
     throw e;
   }
-  return { exercise, response, feedback };
+  return { exercise, response, feedback, locale: lang };
 }
 
 export async function recordExerciseAttempt(
@@ -290,34 +333,38 @@ export async function submitExercise(
   exerciseId: string,
   rawResponse: unknown,
   durationSeconds: number | null,
+  locale?: Locale,
 ): Promise<ExerciseResult> {
-  const prepared = await prepareExercise(db, userId, today, exerciseId, rawResponse);
+  const prepared = await prepareExercise(db, userId, today, exerciseId, rawResponse, locale);
   return recordExerciseAttempt(db, userId, today, prepared, durationSeconds);
 }
 
 /* ─────────────────────────── Knowledge check ─────────────────────────── */
 
-async function quizForUser(db: Executor, userId: string, quizId: string, today: ISODate) {
+async function quizForUser(db: Executor, userId: string, quizId: string, today: ISODate, locale?: Locale) {
+  const lang = await resolveLocale(db, userId, locale);
   const [quiz] = await db.select().from(quizzes).where(and(eq(quizzes.id, quizId), eq(quizzes.status, "published")));
-  if (!quiz) throw new NotFoundError("Quiz not found.");
-  const ctx = await requireOpenLesson(db, userId, quiz.lessonId, today);
-  const questions = await db.select().from(quizQuestions).where(eq(quizQuestions.quizId, quiz.id)).orderBy(asc(quizQuestions.order));
+  if (!quiz) throw new NotFoundError("quizNotFound");
+  const ctx = await requireOpenLesson(db, userId, quiz.lessonId, today, lang);
+  const questions = (await db.select().from(quizQuestions).where(eq(quizQuestions.quizId, quiz.id)).orderBy(asc(quizQuestions.order))).map((q) =>
+    localize(q, lang),
+  );
   return { quiz, questions, lesson: ctx.lesson };
 }
 
-export async function checkQuizAnswer(db: Executor, userId: string, today: ISODate, quizId: string, questionId: string, answer: number) {
-  const { questions } = await quizForUser(db, userId, quizId, today);
+export async function checkQuizAnswer(db: Executor, userId: string, today: ISODate, quizId: string, questionId: string, answer: number, locale?: Locale) {
+  const { questions } = await quizForUser(db, userId, quizId, today, locale);
   const q = questions.find((x) => x.id === questionId);
-  if (!q) throw new NotFoundError("Question not found.");
-  if (answer < 0 || answer >= q.options.length) throw new ValidationError("Pick one of the options.");
+  if (!q) throw new NotFoundError("questionNotFound");
+  if (answer < 0 || answer >= q.options.length) throw new ValidationError("pickOption");
   // Checking reveals the answer, so the first answer checked is the one that counts.
   await db.insert(quizAnswerChecks).values({ userId, questionId: q.id, answer }).onConflictDoNothing();
   return { correct: q.correctIndex === answer, correctIndex: q.correctIndex, explanation: q.explanation };
 }
 
-export async function submitQuiz(db: Executor, userId: string, today: ISODate, quizId: string, answers: number[]) {
-  const { quiz, questions, lesson } = await quizForUser(db, userId, quizId, today);
-  if (answers.length !== questions.length) throw new ValidationError("Answer every question.");
+export async function submitQuiz(db: Executor, userId: string, today: ISODate, quizId: string, answers: number[], locale?: Locale) {
+  const { quiz, questions, lesson } = await quizForUser(db, userId, quizId, today, locale);
+  if (answers.length !== questions.length) throw new ValidationError("answerEveryQuestion");
   const locked = new Map(
     (await db.select().from(quizAnswerChecks).where(and(eq(quizAnswerChecks.userId, userId), inArray(quizAnswerChecks.questionId, questions.map((q) => q.id))))).map((c) => [c.questionId, c.answer]),
   );
@@ -360,8 +407,10 @@ export async function completeLesson(
   today: ISODate,
   lessonId: string,
   input: { reflection?: string },
+  locale?: Locale,
 ) {
-  const ctx = await requireOpenLesson(db, userId, lessonId, today);
+  const lang = await resolveLocale(db, userId, locale);
+  const ctx = await requireOpenLesson(db, userId, lessonId, today, lang);
   const lesson = ctx.lesson;
   const rewards: ActivityResult[] = [];
 
@@ -384,7 +433,7 @@ export async function completeLesson(
         .from(exerciseAttempts)
         .where(and(eq(exerciseAttempts.userId, userId), eq(exerciseAttempts.exerciseId, exercise.id)))
         .limit(1);
-      if (!attempt) throw new ValidationError("Finish the exercise first.");
+      if (!attempt) throw new ValidationError("finishExerciseFirst");
     }
     const [quiz] = await db.select({ id: quizzes.id }).from(quizzes).where(and(eq(quizzes.lessonId, lesson.id), eq(quizzes.status, "published")));
     if (quiz) {
@@ -393,7 +442,7 @@ export async function completeLesson(
         .from(quizAttempts)
         .where(and(eq(quizAttempts.userId, userId), eq(quizAttempts.quizId, quiz.id)))
         .limit(1);
-      if (!attempt) throw new ValidationError("Finish the knowledge check first.");
+      if (!attempt) throw new ValidationError("finishQuizFirst");
     }
   }
 
@@ -451,7 +500,7 @@ export async function completeLesson(
     missionAttemptId = attempt?.id ?? null;
   }
 
-  const outline = await getJourneyOutline(db, userId, ctx.journeyId, today);
+  const outline = await getJourneyOutline(db, userId, ctx.journeyId, today, lang);
   let journeyCompleted = false;
   if (outline?.journeyComplete) {
     const updated = await db
@@ -466,9 +515,9 @@ export async function completeLesson(
   let nextLesson = outline?.nextLesson ? { id: outline.nextLesson.id, title: outline.nextLesson.title, moduleTitle: outline.nextLesson.moduleTitle } : null;
   let nextJourney: { id: string; title: string } | null = null;
   if (outline?.journeyComplete) {
-    nextJourney = await advanceRoadmap(db, userId, ctx.journeyId);
+    nextJourney = await advanceRoadmap(db, userId, ctx.journeyId, lang);
     if (nextJourney) {
-      const nextOutline = await getJourneyOutline(db, userId, nextJourney.id, today);
+      const nextOutline = await getJourneyOutline(db, userId, nextJourney.id, today, lang);
       nextLesson = nextOutline?.nextLesson ? { id: nextOutline.nextLesson.id, title: nextOutline.nextLesson.title, moduleTitle: nextOutline.nextLesson.moduleTitle } : null;
     }
   }
@@ -486,19 +535,30 @@ export async function completeLesson(
 
 /* ─────────────────────────── Missions ─────────────────────────── */
 
-async function ownedAttempt(db: Executor, userId: string, attemptId: string) {
+async function ownedAttempt(db: Executor, userId: string, attemptId: string, lang: Locale) {
   const [row] = await db
-    .select({ attempt: dailyActionAttempts, action: dailyActions, lessonCategory: lessons.category, lessonTitle: lessons.title })
+    .select({
+      attempt: dailyActionAttempts,
+      action: dailyActions,
+      lessonCategory: lessons.category,
+      lessonTitle: lessons.title,
+      lessonTr: lessons.translations,
+    })
     .from(dailyActionAttempts)
     .innerJoin(dailyActions, eq(dailyActions.id, dailyActionAttempts.dailyActionId))
     .innerJoin(lessons, eq(lessons.id, dailyActions.lessonId))
     .where(and(eq(dailyActionAttempts.id, attemptId), eq(dailyActionAttempts.userId, userId)));
-  if (!row) throw new NotFoundError("Mission not found.");
-  return row;
+  if (!row) throw new NotFoundError("missionNotFound");
+  return {
+    attempt: row.attempt,
+    action: localize(row.action, lang),
+    lessonCategory: row.lessonCategory,
+    lessonTitle: tr(row.lessonTr, lang, "title", row.lessonTitle),
+  };
 }
 
-export async function getMission(db: Executor, userId: string, attemptId: string) {
-  const row = await ownedAttempt(db, userId, attemptId);
+export async function getMission(db: Executor, userId: string, attemptId: string, locale?: Locale) {
+  const row = await ownedAttempt(db, userId, attemptId, await resolveLocale(db, userId, locale));
   const [reflection] = await db
     .select()
     .from(reflections)
@@ -525,13 +585,13 @@ export async function checkInMission(
   attemptId: string,
   input: { status: "done" | "not_yet" | "skipped"; outcome?: "difficult" | "normal" | "good" | "excellent" },
 ) {
-  const row = await ownedAttempt(db, userId, attemptId);
+  const row = await ownedAttempt(db, userId, attemptId, "en");
   if (input.status !== "done") {
-    if (row.attempt.status === "done") throw new ValidationError("This mission is already complete.");
+    if (row.attempt.status === "done") throw new ValidationError("missionAlreadyComplete");
     await db.update(dailyActionAttempts).set({ status: input.status }).where(eq(dailyActionAttempts.id, attemptId));
     return { status: input.status, reward: null };
   }
-  if (!input.outcome) throw new ValidationError("Tell us how it went.");
+  if (!input.outcome) throw new ValidationError("tellUsHowItWent");
   if (row.attempt.status !== "done") {
     await db
       .update(dailyActionAttempts)
@@ -559,14 +619,16 @@ export async function saveMissionReflection(
   today: ISODate,
   attemptId: string,
   answers: ActionReflectionAnswers,
+  locale?: Locale,
 ) {
-  const row = await ownedAttempt(db, userId, attemptId);
+  const lang = await resolveLocale(db, userId, locale);
+  const row = await ownedAttempt(db, userId, attemptId, lang);
   const clean = Object.fromEntries(
     Object.entries(answers)
       .map(([k, v]) => [k, typeof v === "string" ? v.trim().slice(0, 2000) : ""])
       .filter(([, v]) => v),
   ) as ActionReflectionAnswers;
-  if (Object.keys(clean).length === 0) throw new ValidationError("Write at least one answer.");
+  if (Object.keys(clean).length === 0) throw new ValidationError("writeOneAnswer");
   const [existing] = await db
     .select({ id: reflections.id })
     .from(reflections)
@@ -586,22 +648,25 @@ export async function saveMissionReflection(
   });
 
   const [plan] = await db.select({ journeyId: growthPlans.journeyId }).from(growthPlans).where(and(eq(growthPlans.userId, userId), eq(growthPlans.status, "active")));
-  const outline = plan?.journeyId ? await getJourneyOutline(db, userId, plan.journeyId, today) : null;
+  const outline = plan?.journeyId ? await getJourneyOutline(db, userId, plan.journeyId, today, lang) : null;
   const next = outline?.todayLesson ?? outline?.nextLesson ?? null;
-  const feedback = reflectionFeedback({ outcome: row.attempt.outcome, answers: clean, next: next ? { title: next.title } : null });
+  const feedback = reflectionFeedback({ outcome: row.attempt.outcome, answers: clean, next: next ? { title: next.title } : null }, lang);
   return { reward, feedback };
 }
 
 /* ─────────────────────────── Spaced review ─────────────────────────── */
 
-export async function getDueReviews(db: Executor, userId: string, today: ISODate, limit = 5) {
-  return db
+export async function getDueReviews(db: Executor, userId: string, today: ISODate, limit = 5, locale?: Locale) {
+  const lang = await resolveLocale(db, userId, locale);
+  const rows = await db
     .select({
       id: reviewItems.id,
       stage: reviewItems.stage,
       prompt: quizQuestions.prompt,
       options: quizQuestions.options,
+      translations: quizQuestions.translations,
       lessonTitle: lessons.title,
+      lessonTr: lessons.translations,
     })
     .from(reviewItems)
     .innerJoin(quizQuestions, eq(quizQuestions.id, reviewItems.quizQuestionId))
@@ -610,9 +675,10 @@ export async function getDueReviews(db: Executor, userId: string, today: ISODate
     .where(and(eq(reviewItems.userId, userId), isNotNull(reviewItems.dueOn), lte(reviewItems.dueOn, today)))
     .orderBy(asc(reviewItems.dueOn), asc(reviewItems.stage))
     .limit(limit);
+  return rows.map(({ lessonTr, ...r }) => ({ ...localize(r, lang), lessonTitle: tr(lessonTr, lang, "title", r.lessonTitle) }));
 }
 
-export async function answerReview(db: Executor, userId: string, today: ISODate, itemId: string, answer: number) {
+export async function answerReview(db: Executor, userId: string, today: ISODate, itemId: string, answer: number, locale?: Locale) {
   const [row] = await db
     .select({ item: reviewItems, question: quizQuestions, category: lessons.category })
     .from(reviewItems)
@@ -620,8 +686,9 @@ export async function answerReview(db: Executor, userId: string, today: ISODate,
     .innerJoin(quizzes, eq(quizzes.id, quizQuestions.quizId))
     .innerJoin(lessons, eq(lessons.id, quizzes.lessonId))
     .where(and(eq(reviewItems.id, itemId), eq(reviewItems.userId, userId)));
-  if (!row) throw new NotFoundError("Review not found.");
-  if (!row.item.dueOn || row.item.dueOn > today) throw new ValidationError("This concept isn't due yet.");
+  if (!row) throw new NotFoundError("reviewNotFound");
+  if (!row.item.dueOn || row.item.dueOn > today) throw new ValidationError("conceptNotDue");
+  const explanation = tr(row.question.translations, await resolveLocale(db, userId, locale), "explanation", row.question.explanation);
 
   const correct = row.question.correctIndex === answer;
   const next = scheduleReview({ stage: row.item.stage, dueOn: row.item.dueOn, lapses: row.item.lapses }, correct, today);
@@ -638,18 +705,21 @@ export async function answerReview(db: Executor, userId: string, today: ISODate,
     skillKey: categorySkill(row.category),
     skillGain: correct ? 1 : 0,
   });
-  return { correct, correctIndex: row.question.correctIndex, explanation: row.question.explanation, nextDueOn: next.dueOn, reward };
+  return { correct, correctIndex: row.question.correctIndex, explanation, nextDueOn: next.dueOn, reward };
 }
 
 /* ─────────────────────────── Roadmap ─────────────────────────── */
 
 /** The plan's journeys in order (older plans without a stored roadmap fall back to catalogue order). */
-export async function planRoadmap(db: Executor, plan: { roadmap: string[]; journeyId: string | null }) {
-  const published = await db
-    .select({ id: journeys.id, title: journeys.title, category: journeys.category })
-    .from(journeys)
-    .where(eq(journeys.status, "published"))
-    .orderBy(asc(journeys.order));
+export async function planRoadmap(db: Executor, plan: { roadmap: string[]; journeyId: string | null }, locale?: Locale) {
+  const lang = await requestLocale(locale);
+  const published = (
+    await db
+      .select({ id: journeys.id, title: journeys.title, category: journeys.category, translations: journeys.translations })
+      .from(journeys)
+      .where(eq(journeys.status, "published"))
+      .orderBy(asc(journeys.order))
+  ).map((j) => localize(j, lang));
   const byId = new Map(published.map((j) => [j.id, j]));
   const ids = plan.roadmap.length ? plan.roadmap.filter((id) => byId.has(id)) : [];
   for (const j of published) if (!ids.includes(j.id)) ids.push(j.id);
@@ -661,14 +731,15 @@ export async function planRoadmap(db: Executor, plan: { roadmap: string[]; journ
 }
 
 /** Enrols the learner in the next unfinished journey of their roadmap. */
-export async function advanceRoadmap(db: Executor, userId: string, finishedJourneyId: string) {
+export async function advanceRoadmap(db: Executor, userId: string, finishedJourneyId: string, locale?: Locale) {
+  const lang = await resolveLocale(db, userId, locale);
   const [plan] = await db.select().from(growthPlans).where(and(eq(growthPlans.userId, userId), eq(growthPlans.status, "active")));
   if (!plan) return null;
   const done = new Set(
     (await db.select({ id: userJourneys.journeyId }).from(userJourneys).where(and(eq(userJourneys.userId, userId), eq(userJourneys.status, "completed")))).map((r) => r.id),
   );
   done.add(finishedJourneyId);
-  const next = (await planRoadmap(db, plan)).find((j) => !done.has(j.id));
+  const next = (await planRoadmap(db, plan, lang)).find((j) => !done.has(j.id));
   if (!next) return null;
   await db
     .insert(userJourneys)
@@ -680,9 +751,10 @@ export async function advanceRoadmap(db: Executor, userId: string, finishedJourn
 
 /* ─────────────────────────── Journey switching ─────────────────────────── */
 
-export async function switchJourney(db: Executor, userId: string, journeyId: string) {
-  const [journey] = await db.select().from(journeys).where(and(eq(journeys.id, journeyId), eq(journeys.status, "published")));
-  if (!journey) throw new NotFoundError("Journey not found.");
+export async function switchJourney(db: Executor, userId: string, journeyId: string, locale?: Locale) {
+  const [journeyRow] = await db.select().from(journeys).where(and(eq(journeys.id, journeyId), eq(journeys.status, "published")));
+  if (!journeyRow) throw new NotFoundError("journeyNotFound");
+  const journey = localize(journeyRow, await resolveLocale(db, userId, locale));
   await db
     .insert(userJourneys)
     .values({ userId, journeyId })

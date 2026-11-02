@@ -2,7 +2,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
 export function Card({ className, ...props }: ComponentProps<"div">) {
-  return <div className={cn("rounded-3xl bg-surface p-5 shadow-card", className)} {...props} />;
+  return <div className={cn("rounded-[28px] bg-surface p-5 shadow-card", className)} {...props} />;
 }
 
 export function Eyebrow({ className, ...props }: ComponentProps<"p">) {

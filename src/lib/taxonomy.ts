@@ -2,7 +2,10 @@
  * Canonical taxonomy. Skills are what we score; categories are finer content
  * labels that roll up into a skill; goals are what learners pick at onboarding.
  * The database is seeded from these lists and stays the runtime source of truth.
+ * Labels have Spanish versions (see the `taxonomy` message namespace).
  */
+import type { Locale } from "@/i18n/config";
+import { taxonomy as esTaxonomy } from "@/i18n/messages/es/nav";
 
 export const SKILLS = [
   { key: "communication", name: "Communication", description: "Say what you mean, clearly and with intent." },
@@ -49,8 +52,49 @@ export const GOALS = [
 
 export type GoalKey = (typeof GOALS)[number]["key"];
 
-export function categoryName(key: string): string {
+const ES_GOALS: Record<string, string> = {
+  social_skills: "Habilidades sociales",
+  personal_branding: "Marca personal",
+  critical_thinking: "Pensamiento crítico",
+  memory: "Memoria",
+  storytelling: "Storytelling",
+};
+
+/** Localized label from the `taxonomy` message namespace (English = the lists above). */
+function esLabel(group: "skills" | "categories" | "resourceTypes", key: string): string | undefined {
+  return (esTaxonomy[group] as Record<string, string>)[key];
+}
+
+export function categoryName(key: string, locale: Locale = "en"): string {
+  if (locale === "es") {
+    const es = esLabel("categories", key);
+    if (es) return es;
+  }
   return CATEGORIES.find((c) => c.key === key)?.name ?? key.replace(/_/g, " ");
+}
+
+export function skillName(key: string, locale: Locale = "en"): string {
+  if (locale === "es") {
+    const es = esLabel("skills", key);
+    if (es) return es;
+  }
+  return SKILLS.find((s) => s.key === key)?.name ?? key;
+}
+
+export function goalName(key: string, locale: Locale = "en"): string {
+  if (locale === "es") {
+    const es = ES_GOALS[key] ?? esLabel("skills", key) ?? esLabel("categories", key);
+    if (es) return es;
+  }
+  return GOALS.find((g) => g.key === key)?.name ?? key;
+}
+
+export function resourceTypeLabel(type: string, locale: Locale = "en"): string {
+  if (locale === "es") {
+    const es = esLabel("resourceTypes", type);
+    if (es) return es;
+  }
+  return RESOURCE_TYPE_LABELS[type] ?? type;
 }
 
 export function categorySkill(key: string): SkillKey {

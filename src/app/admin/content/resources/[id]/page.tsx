@@ -1,18 +1,23 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { getTranslator } from "@/i18n/server";
 import { requirePermission } from "@/server/auth/current-user";
 import { can } from "@/server/auth/rbac";
 import { getDb } from "@/server/db";
 import { NotFoundError } from "@/server/errors";
-import { getResourceAdmin } from "@/server/services/admin";
+import { getResourceAdmin, hasSpanish } from "@/server/services/admin";
 import { uuidSchema } from "@/server/validation";
-import { isLiveLocked, LiveNotice, PageHeader, Panel, StatusBadge } from "../../../ui";
+import { EsMissingBadge, isLiveLocked, LiveNotice, PageHeader, Panel, StatusBadge } from "../../../ui";
 import { ResourceForm } from "../../library-forms";
 
-export const metadata: Metadata = { title: "Resource" };
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getTranslator();
+  return { title: t("admin.resource.metaTitle") };
+}
 
 export default async function ResourceAdminPage({ params }: PageProps<"/admin/content/resources/[id]">) {
   const user = await requirePermission("content:read");
+  const { t } = await getTranslator();
   const { id } = await params;
   if (!uuidSchema.safeParse(id).success) notFound();
   let resource;
@@ -22,17 +27,27 @@ export default async function ResourceAdminPage({ params }: PageProps<"/admin/co
     if (e instanceof NotFoundError) notFound();
     throw e;
   }
+  const canWrite = can(user.roles, "content:write");
+  const canPublish = can(user.roles, "content:publish");
   return (
     <div className="max-w-3xl">
       <PageHeader
         title={resource.title}
-        crumbs={[{ href: "/admin/content", label: "Content" }, { href: "/admin/content/resources", label: "Explore library" }]}
-        action={<StatusBadge status={resource.status} />}
+        crumbs={[
+          { href: "/admin/content", label: t("admin.content.title") },
+          { href: "/admin/content/resources", label: t("admin.resource.listTitle") },
+        ]}
+        action={
+          <div className="flex items-center gap-2">
+            {!hasSpanish(resource.translations) && <EsMissingBadge />}
+            <StatusBadge status={resource.status} />
+          </div>
+        }
       />
-      {can(user.roles, "content:write") && isLiveLocked(can(user.roles, "content:publish"), resource.status) ? (
+      {canWrite && isLiveLocked(canPublish, resource.status) ? (
         <LiveNotice />
       ) : (
-        <Panel>{can(user.roles, "content:write") ? <ResourceForm resource={resource} canPublish={can(user.roles, "content:publish")} /> : <p>Read-only.</p>}</Panel>
+        <Panel>{canWrite ? <ResourceForm resource={resource} canPublish={canPublish} /> : <p>{t("admin.content.readOnly")}</p>}</Panel>
       )}
     </div>
   );

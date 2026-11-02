@@ -1,28 +1,34 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Card } from "@/components/ui/primitives";
+import { getTranslator } from "@/i18n/server";
+import { AuthFooter, AuthHero } from "../auth-hero";
 import { ForgotPasswordForm } from "../auth-forms";
 
-export const metadata: Metadata = { title: "Reset password" };
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getTranslator();
+  return { title: t("auth.forgot.metaTitle") };
+}
 
 export default async function ForgotPasswordPage({ searchParams }: PageProps<"/forgot-password">) {
   const { admin } = await searchParams;
+  const { t } = await getTranslator();
+  const isAdmin = admin === "1";
   return (
     <>
-      <h1 className="font-display text-[40px] leading-[1.02]">{admin === "1" ? "Secure your admin account." : "Reset your password."}</h1>
-      <p className="mt-2 text-[15px] text-ink-2">
-        {admin === "1"
-          ? "Your email is confirmed and this account now has admin access. For safety, its previous password was cleared — choose a new one with the link we'll send."
-          : "We'll email you a link to choose a new one."}
-      </p>
-      <div className="mt-8">
+      <AuthHero
+        title={isAdmin ? t("auth.forgot.adminTitle") : t("auth.forgot.title")}
+        body={isAdmin ? t("auth.forgot.adminBody") : t("auth.forgot.body")}
+      />
+      <Card className="mt-6 p-6">
         <ForgotPasswordForm />
-      </div>
-      <p className="mt-auto pt-10 text-center text-[15px] text-ink-2">
-        Remembered it?{" "}
+      </Card>
+      <AuthFooter>
+        {t("auth.forgot.remembered")}{" "}
         <Link href="/login" className="font-medium text-ink underline underline-offset-4">
-          Sign in
+          {t("auth.forgot.signIn")}
         </Link>
-      </p>
+      </AuthFooter>
     </>
   );
 }

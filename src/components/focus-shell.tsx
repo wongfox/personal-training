@@ -1,6 +1,9 @@
+"use client";
+
 import { X } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { useT } from "@/i18n/client";
 
 /** Chrome for full-screen flows: close button, optional progress, content, sticky footer. */
 export function FocusShell({
@@ -14,11 +17,12 @@ export function FocusShell({
   children: ReactNode;
   footer?: ReactNode;
 }) {
+  const t = useT();
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[560px] flex-col">
       <div className="sticky top-0 z-30 bg-bg/90 px-5 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 backdrop-blur-xl">
         <div className="flex items-center gap-3">
-          <Link href={closeHref} aria-label="Close" className="-ml-2 grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink-2 hover:bg-surface-2">
+          <Link href={closeHref} aria-label={t("common.close")} className="-ml-2 grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink-2 hover:bg-surface-2">
             <X size={22} />
           </Link>
           <div className="min-w-0 flex-1">{top}</div>

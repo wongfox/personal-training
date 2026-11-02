@@ -20,7 +20,7 @@ export function MarkdownLite({ source }: { source: string }) {
         if (lines[0].startsWith("## ")) {
           return (
             <Fragment key={i}>
-              <h2 className="pt-2 text-[19px] font-semibold text-ink">{inline(lines[0].slice(3))}</h2>
+              <h2 className="pt-3 font-display text-[23px] leading-[1.2] text-ink">{inline(lines[0].slice(3))}</h2>
               {lines.length > 1 && <MarkdownLite source={lines.slice(1).join("\n")} />}
             </Fragment>
           );
@@ -42,7 +42,9 @@ export function MarkdownLite({ source }: { source: string }) {
             <ol key={i} className="space-y-2">
               {lines.map((l, j) => (
                 <li key={j} className="flex gap-3">
-                  <span className="w-5 shrink-0 font-semibold tabular-nums text-ink">{j + 1}.</span>
+                  <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-accent-soft text-[12px] font-semibold tabular-nums text-accent" aria-hidden>
+                    {j + 1}
+                  </span>
                   <span>{inline(l.trim().replace(/^\d+\. /, ""))}</span>
                 </li>
               ))}

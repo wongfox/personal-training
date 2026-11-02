@@ -1,0 +1,47 @@
+export const nav = {
+  home: "Home",
+  journey: "Journey",
+  practice: "Practice",
+  explore: "Explore",
+  profile: "Profile",
+  coach: "AI Coach",
+  admin: "Admin",
+  main: "Main",
+};
+
+export const taxonomy = {
+  skills: {
+    communication: "Communication",
+    confidence: "Confidence",
+    leadership: "Leadership",
+    intelligence: "Intelligence",
+    social_skills: "Social Skills",
+    networking: "Networking",
+  },
+  categories: {
+    communication: "Communication",
+    executive_presence: "Executive Presence",
+    storytelling: "Storytelling",
+    personal_branding: "Personal Branding",
+    confidence: "Confidence",
+    leadership: "Leadership",
+    negotiation: "Negotiation",
+    critical_thinking: "Critical Thinking",
+    memory: "Memory",
+    psychology: "Psychology",
+    productivity: "Productivity",
+    business: "Business",
+    social_intelligence: "Social Intelligence",
+    networking: "Networking",
+  },
+  resourceTypes: {
+    lesson: "Lesson",
+    insight: "Expert insight",
+    framework: "Framework",
+    case_study: "Case study",
+    video: "Video",
+    exercise: "Exercise",
+    cheat_sheet: "Cheat sheet",
+    template: "Template",
+  },
+};

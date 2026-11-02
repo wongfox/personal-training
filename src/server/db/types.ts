@@ -201,3 +201,10 @@ export interface NextFocus {
   headline: string;
   detail: string;
 }
+
+/* ─────────────────────────── i18n ─────────────────────────── */
+
+export type Locale = "en" | "es";
+
+/** Translated field overrides per non-default locale (English lives in the columns). */
+export type ContentTranslations = Partial<Record<Exclude<Locale, "en">, Record<string, unknown>>>;

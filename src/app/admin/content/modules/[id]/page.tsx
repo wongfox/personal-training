@@ -1,20 +1,41 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { buttonClass } from "@/components/ui/button";
+import { getTranslator } from "@/i18n/server";
 import { requirePermission } from "@/server/auth/current-user";
 import { can } from "@/server/auth/rbac";
 import { getDb } from "@/server/db";
 import { NotFoundError } from "@/server/errors";
-import { getModuleAdmin } from "@/server/services/admin";
+import { getModuleAdmin, hasSpanish } from "@/server/services/admin";
 import { uuidSchema } from "@/server/validation";
 import { saveModuleAction } from "../../../actions";
 import { AdminForm } from "../../../form";
-import { isLiveLocked, LiveNotice, MetaFields, PageHeader, Panel, StatusBadge, Table } from "../../../ui";
+import { LangTabs } from "../../../lang-tabs";
+import {
+  EsMissingBadge,
+  formatDate,
+  isLiveLocked,
+  LiveNotice,
+  MetaFields,
+  PageHeader,
+  Panel,
+  PanelTitle,
+  SpanishIntro,
+  SpanishMetaFields,
+  spanishOf,
+  StatusBadge,
+  Table,
+} from "../../../ui";
 
-export const metadata: Metadata = { title: "Module" };
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getTranslator();
+  return { title: t("admin.module.metaTitle") };
+}
 
 export default async function ModuleAdminPage({ params }: PageProps<"/admin/content/modules/[id]">) {
   const user = await requirePermission("content:read");
+  const { t, locale } = await getTranslator();
   const { id } = await params;
   if (!uuidSchema.safeParse(id).success) notFound();
   let data;
@@ -26,50 +47,64 @@ export default async function ModuleAdminPage({ params }: PageProps<"/admin/cont
   }
   const { module: mod, journey, lessons } = data;
   const canWrite = can(user.roles, "content:write");
+  const canPublish = can(user.roles, "content:publish");
 
   return (
     <div className="max-w-5xl space-y-6">
       <PageHeader
         title={mod.title}
         crumbs={[
-          { href: "/admin/content", label: "Content" },
+          { href: "/admin/content", label: t("admin.content.title") },
           { href: `/admin/content/journeys/${journey.id}`, label: journey.title },
         ]}
         action={
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {!hasSpanish(mod.translations) && <EsMissingBadge />}
             <StatusBadge status={mod.status} />
             {canWrite && (
-              <Link href={`/admin/content/lessons/new?module=${mod.id}`} className="rounded-full bg-ink px-4 py-2 text-[14px] font-medium text-bg">
-                New lesson
+              <Link href={`/admin/content/lessons/new?module=${mod.id}`} className={buttonClass("primary", "sm")}>
+                {t("admin.module.newLesson")}
               </Link>
             )}
           </div>
         }
       />
-      <Table head={["#", "Lesson", "Status", "Minutes", "Updated"]}>
+      <Table head={[t("admin.module.head.order"), t("admin.module.head.lesson"), t("admin.module.head.status"), t("admin.module.head.minutes"), t("admin.module.head.updated")]}>
         {lessons.map((l) => (
           <tr key={l.id} className="hover:bg-surface-2">
             <td className="px-4 py-3 tabular-nums text-muted">{l.order}</td>
             <td className="px-4 py-3">
-              <Link href={`/admin/content/lessons/${l.id}`} className="font-medium hover:underline">
-                {l.title}
-              </Link>
+              <div className="flex flex-wrap items-center gap-2">
+                <Link href={`/admin/content/lessons/${l.id}`} className="font-medium hover:underline">
+                  {l.title}
+                </Link>
+                {!l.hasEs && <EsMissingBadge />}
+              </div>
               <div className="font-mono text-[11px] text-muted">{l.slug}</div>
             </td>
             <td className="px-4 py-3">
               <StatusBadge status={l.status} />
             </td>
             <td className="px-4 py-3 tabular-nums">{l.estimatedMinutes}</td>
-            <td className="px-4 py-3 text-[13px] text-ink-2">{l.updatedAt.toISOString().slice(0, 10)}</td>
+            <td className="whitespace-nowrap px-4 py-3 text-[13px] text-ink-2">{formatDate(l.updatedAt, locale)}</td>
           </tr>
         ))}
       </Table>
-      {canWrite && isLiveLocked(can(user.roles, "content:publish"), mod.status) && <LiveNotice />}
-      {canWrite && !isLiveLocked(can(user.roles, "content:publish"), mod.status) && (
+      {canWrite && isLiveLocked(canPublish, mod.status) && <LiveNotice />}
+      {canWrite && !isLiveLocked(canPublish, mod.status) && (
         <Panel className="max-w-3xl">
-          <h2 className="mb-4 text-[15px] font-semibold">Edit module</h2>
+          <PanelTitle className="mb-4">{t("admin.module.edit")}</PanelTitle>
           <AdminForm action={saveModuleAction} hidden={{ id: mod.id, journeyId: journey.id }}>
-            <MetaFields values={mod} canPublish={can(user.roles, "content:publish")} withSlug={false} minutes={{ min: 1, max: 600 }} />
+            <LangTabs
+              esMissing={!hasSpanish(mod.translations)}
+              en={<MetaFields values={mod} canPublish={canPublish} withSlug={false} minutes={{ min: 1, max: 600 }} />}
+              es={
+                <>
+                  <SpanishIntro />
+                  <SpanishMetaFields english={mod} spanish={spanishOf(mod)} />
+                </>
+              }
+            />
           </AdminForm>
         </Panel>
       )}

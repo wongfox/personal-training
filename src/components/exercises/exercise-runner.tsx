@@ -1,7 +1,9 @@
 "use client";
 
+import { RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { FormAlert } from "@/components/ui/field";
+import { useT } from "@/i18n/client";
 import { postJSON } from "@/lib/api-client";
 import type { ExerciseFeedback } from "@/server/db/types";
 import type { ClientExerciseConfig } from "@/server/engine/client-config";
@@ -27,6 +29,7 @@ export function ExerciseRunner({
   onComplete?: (outcome: ExerciseOutcome) => void;
   onRetry?: () => void;
 }) {
+  const t = useT();
   const [result, setResult] = useState<ExerciseOutcome | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -47,7 +50,7 @@ export function ExerciseRunner({
       setResult(outcome);
       onComplete?.(outcome);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong.");
+      setError(e instanceof Error ? e.message : t("common.somethingWrong"));
     } finally {
       setSubmitting(false);
     }
@@ -96,8 +99,12 @@ export function ExerciseRunner({
       {result && (
         <>
           <FeedbackPanel feedback={result.feedback} reveal={result.reveal} xp={result.reward.xp} />
-          <button type="button" onClick={retry} className="text-[14px] font-medium text-ink-2 underline underline-offset-4 hover:text-ink">
-            Try again
+          <button
+            type="button"
+            onClick={retry}
+            className="inline-flex h-10 items-center gap-2 rounded-full bg-surface-2 px-4 text-[14px] font-medium text-ink-2 transition hover:text-ink active:scale-[0.98]"
+          >
+            <RotateCcw size={15} aria-hidden /> {t("common.tryAgain")}
           </button>
         </>
       )}

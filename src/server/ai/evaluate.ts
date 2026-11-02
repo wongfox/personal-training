@@ -3,7 +3,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import type { DimensionScore, ExerciseConfig, ExerciseFeedback, FeedbackDimension } from "@/server/db/types";
-import { DIMENSION_LABELS } from "@/server/engine/text-analysis";
+import type { Locale } from "@/i18n/config";
+import { DIMENSION_LABELS, dimensionLabels } from "@/server/engine/text-analysis";
 import { AI_MODEL, aiEnabled, anthropic } from "./client";
 
 const AiFeedback = z.object({
@@ -18,6 +19,12 @@ Score each requested dimension from 0 to 100 against what a strong professional 
 Be specific: quote the learner's own words when pointing out a problem, and give a concrete rewrite or next move.
 Strengths: at most 2, only if genuinely earned. Improvements: at most 3, most important first, each one actionable.
 Summary: one sentence, plain and direct. Never mention that you are an AI.`;
+
+/** The learner reads the feedback, so it must be in their language (the dimension keys stay in English). */
+const LANGUAGE_RULE: Record<Locale, string> = {
+  en: "",
+  es: `\nWrite the summary, strengths, improvements and notes in neutral Latin-American Spanish, addressing the learner as "tú" and in gender-neutral terms. Keep the dimension keys exactly as given (in English).`,
+};
 
 function transcript(config: ExerciseConfig, response: unknown): { brief: string; dims: FeedbackDimension[] } | null {
   if (config.type === "roleplay") {
@@ -49,7 +56,9 @@ export async function enrichWithAi(
   config: ExerciseConfig,
   response: unknown,
   rules: ExerciseFeedback,
+  locale: Locale = "en",
 ): Promise<ExerciseFeedback> {
+  const labels = dimensionLabels(locale);
   if (!aiEnabled()) return rules;
   const t = transcript(config, response);
   if (!t) return rules;
@@ -60,7 +69,7 @@ export async function enrichWithAi(
         model: AI_MODEL,
         max_tokens: 4000,
         output_config: { effort: "low", format: zodOutputFormat(AiFeedback) },
-        system: SYSTEM,
+        system: SYSTEM + LANGUAGE_RULE[locale],
         messages: [
           {
             role: "user",
@@ -77,7 +86,7 @@ export async function enrichWithAi(
       const ai = parsed.dimensions.find((d) => d.key === key);
       const ruleScore = rules.dimensions?.find((d) => d.key === key)?.score;
       const score = ai ? Math.round(Math.max(0, Math.min(100, ai.score))) : (ruleScore ?? 50);
-      return { key, label: DIMENSION_LABELS[key], score, note: ai?.note };
+      return { key, label: labels[key], score, note: ai?.note };
     });
     const score = Math.round(dimensions.reduce((s, d) => s + d.score, 0) / dimensions.length);
     return {

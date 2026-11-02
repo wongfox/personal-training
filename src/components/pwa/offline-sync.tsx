@@ -3,11 +3,13 @@
 import { CloudOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useT } from "@/i18n/client";
 import { flushOutbox, pendingCount, setOutboxUser } from "@/lib/api-client";
 
 /** Flushes queued progress when the app comes back online, and shows an offline banner. */
 export function OfflineSync({ userId }: { userId: string }) {
   const router = useRouter();
+  const t = useT();
   const [offline, setOffline] = useState(false);
 
   useEffect(() => {
@@ -32,8 +34,8 @@ export function OfflineSync({ userId }: { userId: string }) {
   if (!offline) return null;
   return (
     <div role="status" className="fixed inset-x-0 top-0 z-50 flex justify-center pt-[max(0.5rem,env(safe-area-inset-top))]">
-      <span className="inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2 text-[13px] text-bg shadow-card">
-        <CloudOff size={14} /> Offline — progress will sync when you reconnect
+      <span className="inline-flex items-center gap-2 rounded-full bg-hero px-4 py-2 text-[13px] text-hero-ink shadow-card">
+        <CloudOff size={14} aria-hidden /> {t("common.offlineBanner")}
       </span>
     </div>
   );

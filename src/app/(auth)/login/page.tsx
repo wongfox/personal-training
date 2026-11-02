@@ -1,49 +1,46 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Card } from "@/components/ui/primitives";
+import { getTranslator } from "@/i18n/server";
 import { getCurrentUser } from "@/server/auth/current-user";
 import { googleEnabled } from "@/server/auth/google";
+import { AuthFooter, AuthHero, OrDivider } from "../auth-hero";
 import { LoginForm } from "../auth-forms";
 import { GoogleButton } from "../google-button";
 
-export const metadata: Metadata = { title: "Sign in" };
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getTranslator();
+  return { title: t("auth.login.metaTitle") };
+}
 
-const ERRORS: Record<string, string> = {
-  google_unavailable: "Google sign-in isn't configured on this server yet. Use email and password.",
-  google_failed: "Google sign-in didn't complete. Please try again.",
-  suspended: "This account is suspended. Contact support.",
-};
+const NOTICES = new Set(["google_unavailable", "google_failed", "suspended"]);
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   if (await getCurrentUser()) redirect("/home");
+  const { t } = await getTranslator();
   const { error, verified } = await searchParams;
-  const notice = typeof error === "string" ? ERRORS[error] : verified === "1" ? "Email confirmed. Sign in to continue." : undefined;
+  const notice =
+    typeof error === "string" && NOTICES.has(error)
+      ? t(`auth.login.notices.${error}`)
+      : verified === "1"
+        ? t("auth.login.verified")
+        : undefined;
 
   return (
     <>
-      <h1 className="font-display text-[40px] leading-[1.02]">Welcome back.</h1>
-      <p className="mt-2 text-[15px] text-ink-2">Pick up where you left off.</p>
-      <div className="mt-8 space-y-6">
-        {googleEnabled() && <GoogleButton label="Continue with Google" />}
-        {googleEnabled() && <OrDivider />}
+      <AuthHero title={t("auth.login.title")} body={t("auth.login.body")} />
+      <Card className="mt-6 space-y-5 p-6">
+        {googleEnabled() && <GoogleButton label={t("auth.login.google")} />}
+        {googleEnabled() && <OrDivider label={t("auth.or")} />}
         <LoginForm notice={notice} />
-      </div>
-      <p className="mt-auto pt-10 text-center text-[15px] text-ink-2">
-        New here?{" "}
+      </Card>
+      <AuthFooter>
+        {t("auth.login.newHere")}{" "}
         <Link href="/register" className="font-medium text-ink underline underline-offset-4">
-          Create an account
+          {t("auth.login.createAccount")}
         </Link>
-      </p>
+      </AuthFooter>
     </>
-  );
-}
-
-function OrDivider() {
-  return (
-    <div className="flex items-center gap-3 text-[12px] uppercase tracking-[0.14em] text-muted">
-      <span className="h-px flex-1 bg-line" />
-      or
-      <span className="h-px flex-1 bg-line" />
-    </div>
   );
 }

@@ -13,6 +13,7 @@ export interface SessionUser {
   avatarUrl: string | null;
   roles: string[];
   timezone: string;
+  locale: "en" | "es";
   onboarded: boolean;
 }
 
@@ -53,6 +54,7 @@ export async function validateSessionToken(db: Executor, token: string): Promise
       avatarUrl: users.avatarUrl,
       status: users.status,
       timezone: profiles.timezone,
+      locale: profiles.locale,
       onboardedAt: profiles.onboardingCompletedAt,
     })
     .from(sessions)
@@ -89,6 +91,7 @@ export async function validateSessionToken(db: Executor, token: string): Promise
       avatarUrl: row.avatarUrl,
       roles: roleRows.map((r) => r.key),
       timezone: row.timezone ?? "UTC",
+      locale: row.locale === "es" ? "es" : "en",
       onboarded: Boolean(row.onboardedAt),
     },
   };

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useActionState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FormAlert } from "@/components/ui/field";
+import { useT } from "@/i18n/client";
 import {
   type FormState,
   forgotPasswordAction,
@@ -15,14 +16,16 @@ import {
 const initial: FormState = {};
 
 function Submit({ pending, children }: { pending: boolean; children: React.ReactNode }) {
+  const t = useT();
   return (
     <Button type="submit" disabled={pending} aria-busy={pending}>
-      {pending ? "One moment…" : children}
+      {pending ? t("common.loading") : children}
     </Button>
   );
 }
 
 export function LoginForm({ notice }: { notice?: string }) {
+  const t = useT();
   const [state, action, pending] = useActionState(loginAction, initial);
   return (
     <form action={action} className="space-y-4" noValidate>
@@ -32,7 +35,7 @@ export function LoginForm({ notice }: { notice?: string }) {
         id="email"
         name="email"
         type="email"
-        label="Email"
+        label={t("auth.fields.email")}
         autoComplete="email"
         inputMode="email"
         required
@@ -43,22 +46,23 @@ export function LoginForm({ notice }: { notice?: string }) {
         id="password"
         name="password"
         type="password"
-        label="Password"
+        label={t("auth.fields.password")}
         autoComplete="current-password"
         required
         error={state.fields?.password}
       />
       <div className="flex justify-end">
         <Link href="/forgot-password" className="text-[14px] text-ink-2 underline-offset-4 hover:underline">
-          Forgot password?
+          {t("auth.login.forgot")}
         </Link>
       </div>
-      <Submit pending={pending}>Sign in</Submit>
+      <Submit pending={pending}>{t("auth.login.submit")}</Submit>
     </form>
   );
 }
 
 export function RegisterForm() {
+  const t = useT();
   const [state, action, pending] = useActionState(registerAction, initial);
   const tzRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -71,7 +75,7 @@ export function RegisterForm() {
       <Field
         id="name"
         name="name"
-        label="First name"
+        label={t("auth.fields.name")}
         autoComplete="given-name"
         required
         defaultValue={state.values?.name}
@@ -81,7 +85,7 @@ export function RegisterForm() {
         id="email"
         name="email"
         type="email"
-        label="Email"
+        label={t("auth.fields.email")}
         autoComplete="email"
         inputMode="email"
         required
@@ -92,39 +96,50 @@ export function RegisterForm() {
         id="password"
         name="password"
         type="password"
-        label="Password"
+        label={t("auth.fields.password")}
         autoComplete="new-password"
         required
         minLength={10}
-        hint="At least 10 characters. A short phrase works well."
+        hint={t("auth.fields.passwordHint")}
         error={state.fields?.password}
       />
-      <Submit pending={pending}>Create account</Submit>
+      <Submit pending={pending}>{t("auth.register.submit")}</Submit>
     </form>
   );
 }
 
 export function ForgotPasswordForm() {
+  const t = useT();
   const [state, action, pending] = useActionState(forgotPasswordAction, initial);
   if (state.success) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-5">
         <FormAlert tone="success">{state.success}</FormAlert>
         <Link href="/login" className="block text-center text-[15px] font-medium underline-offset-4 hover:underline">
-          Back to sign in
+          {t("auth.forgot.backToSignIn")}
         </Link>
       </div>
     );
   }
   return (
     <form action={action} className="space-y-4" noValidate>
-      <Field id="email" name="email" type="email" label="Email" autoComplete="email" required error={state.fields?.email} />
-      <Submit pending={pending}>Send reset link</Submit>
+      <Field
+        id="email"
+        name="email"
+        type="email"
+        label={t("auth.fields.email")}
+        autoComplete="email"
+        inputMode="email"
+        required
+        error={state.fields?.email}
+      />
+      <Submit pending={pending}>{t("auth.forgot.submit")}</Submit>
     </form>
   );
 }
 
 export function ResetPasswordForm({ token }: { token: string }) {
+  const t = useT();
   const [state, action, pending] = useActionState(resetPasswordAction, initial);
   return (
     <form action={action} className="space-y-4" noValidate>
@@ -134,14 +149,14 @@ export function ResetPasswordForm({ token }: { token: string }) {
         id="password"
         name="password"
         type="password"
-        label="New password"
+        label={t("auth.fields.newPassword")}
         autoComplete="new-password"
         required
         minLength={10}
-        hint="At least 10 characters."
+        hint={t("auth.fields.newPasswordHint")}
         error={state.fields?.password}
       />
-      <Submit pending={pending}>Save new password</Submit>
+      <Submit pending={pending}>{t("auth.reset.submit")}</Submit>
     </form>
   );
 }

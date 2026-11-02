@@ -1,6 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import { InlineScript } from "@/components/inline-script";
+import { I18nProvider } from "@/i18n/client";
+import { getLocale, messagesFor } from "@/i18n/server";
+import type { MessageTree } from "@/i18n/translate";
 import { ServiceWorkerRegistrar } from "@/components/pwa/service-worker-registrar";
 import "./globals.css";
 
@@ -27,15 +30,16 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f4f2ed" },
-    { media: "(prefers-color-scheme: dark)", color: "#0f0f0d" },
+    { media: "(prefers-color-scheme: light)", color: "#f4efe6" },
+    { media: "(prefers-color-scheme: dark)", color: "#111613" },
   ],
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const locale = await getLocale();
   return (
     <html
-      lang="en"
+      lang={locale}
       className={`${geistSans.variable} ${geistMono.variable} ${display.variable} h-full antialiased`}
       suppressHydrationWarning
     >
@@ -44,7 +48,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <InlineScript html={`try{var t=localStorage.getItem("pgos-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}`} />
       </head>
       <body className="min-h-full bg-bg text-ink">
-        {children}
+        <I18nProvider locale={locale} messages={messagesFor(locale) as unknown as MessageTree}>
+          {children}
+        </I18nProvider>
         <ServiceWorkerRegistrar />
       </body>
     </html>

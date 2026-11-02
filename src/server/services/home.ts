@@ -83,14 +83,24 @@ export async function getHomeData(db: Executor, userId: string, today: ISODate) 
     else {
       const rep = await masteryRepFor(db, plan.primarySkill.key, dayNumber);
       if (rep) {
-        const [doneToday] = await db
+        const [repDone] = await db
           .select({ id: xpTransactions.id })
           .from(xpTransactions)
           .where(and(eq(xpTransactions.userId, userId), eq(xpTransactions.idempotencyKey, `practice:${rep.id}:${today}`), eq(xpTransactions.countsAsTraining, true)));
-        masteryRep = { ...rep, done: Boolean(doneToday) };
+        masteryRep = { ...rep, done: Boolean(repDone) };
       }
     }
   }
+
+  // What's already been done today, for the "Today's plan" checklist.
+  const doneToday = new Set(
+    (
+      await db
+        .selectDistinct({ reason: xpTransactions.reason })
+        .from(xpTransactions)
+        .where(and(eq(xpTransactions.userId, userId), eq(xpTransactions.activityDate, today)))
+    ).map((r) => r.reason),
+  );
 
   const [insight, checkpoint, weeklyDue] = await Promise.all([
     getCoachInsight(db, userId, today, plan, outline, streak.current),
@@ -108,6 +118,7 @@ export async function getHomeData(db: Executor, userId: string, today: ISODate) 
     journeyComplete: outline?.journeyComplete ?? false,
     masteryRep,
     continueJourney,
+    doneToday: [...doneToday],
     missionPreview,
     todaysMission,
     pendingMission,

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { localDate } from "@/lib/dates";
+import { getTranslator } from "@/i18n/server";
 import { requireUser } from "@/server/auth/current-user";
 import { getDb } from "@/server/db";
 import type { NextFocus } from "@/server/db/types";
@@ -20,7 +21,7 @@ export async function submitWeeklyReview(_prev: WeeklyState, formData: FormData)
   const user = await requireUser();
   const db = getDb();
   const plan = await getActivePlan(db, user.id);
-  if (!plan) return { error: "No active plan." };
+  if (!plan) return { error: (await getTranslator()).t("review.week.noPlan") };
   const reflection = String(formData.get("reflection") ?? "").slice(0, 2000);
   let result;
   try {

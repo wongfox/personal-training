@@ -15,16 +15,20 @@ import {
 } from "@/server/db/schema";
 import { buildCoachInsight, type CoachInsight } from "@/server/engine/coach-insight";
 import { FREQUENCY_DAYS } from "@/server/engine/plan";
+import { type Locale, resolveLocale } from "@/server/i18n/locale";
+import { localize } from "@/server/i18n/localize";
 import type { ActivePlan, JourneyOutline } from "./training";
 import { trainingDays } from "./training";
 
-export async function getSkillScores(db: Executor, userId: string) {
-  return db
-    .select({ key: skills.key, name: skills.name, score: userSkills.score, baseline: userSkills.baseline })
+export async function getSkillScores(db: Executor, userId: string, locale?: Locale) {
+  const lang = await resolveLocale(db, userId, locale);
+  const rows = await db
+    .select({ key: skills.key, name: skills.name, score: userSkills.score, baseline: userSkills.baseline, translations: skills.translations })
     .from(userSkills)
     .innerJoin(skills, eq(skills.id, userSkills.skillId))
     .where(eq(userSkills.userId, userId))
     .orderBy(skills.order);
+  return rows.map((r) => localize(r, lang));
 }
 
 export async function countCompletedLessons(db: Executor, userId: string): Promise<number> {
@@ -42,12 +46,14 @@ export async function getCoachInsight(
   plan: ActivePlan,
   outline: JourneyOutline | null,
   streak: number,
+  locale?: Locale,
 ): Promise<CoachInsight> {
+  const lang = await resolveLocale(db, userId, locale);
   const since = addDays(today, -14);
   const [skillRows, actionRows, reflectionRows, exerciseRows, days, lessonsCompleted] = await Promise.all([
-    getSkillScores(db, userId),
+    getSkillScores(db, userId, lang),
     db
-      .select({ status: dailyActionAttempts.status, outcome: dailyActionAttempts.outcome, title: dailyActions.title })
+      .select({ status: dailyActionAttempts.status, outcome: dailyActionAttempts.outcome, title: dailyActions.title, translations: dailyActions.translations })
       .from(dailyActionAttempts)
       .innerJoin(dailyActions, eq(dailyActions.id, dailyActionAttempts.dailyActionId))
       .where(and(eq(dailyActionAttempts.userId, userId), gte(dailyActionAttempts.actionDate, since), sql`${dailyActionAttempts.actionDate} < ${today}`))
@@ -73,7 +79,7 @@ export async function getCoachInsight(
   return buildCoachInsight({
     primarySkill: plan.primarySkill,
     skills: skillRows,
-    actions: actionRows,
+    actions: actionRows.map((a) => localize(a, lang)),
     reflections: reflectionRows.map((r) => Object.values(r.answers).filter(Boolean).join(" ")),
     exercises: exerciseRows.map((e) => ({ score: e.score, dimensions: e.feedback.dimensions, flaggedCount: e.feedback.flagged?.length ?? 0 })),
     daysTrainedLast7: days.length,
@@ -82,5 +88,5 @@ export async function getCoachInsight(
     streak,
     lessonsCompleted,
     next: nextLesson ? { title: nextLesson.title, skillName: plan.primarySkill.name } : null,
-  });
+  }, lang);
 }

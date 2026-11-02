@@ -3,44 +3,49 @@
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { FormAlert } from "@/components/ui/field";
+import { useT } from "@/i18n/client";
 import { cn } from "@/lib/cn";
 import type { AssessmentQuestionView } from "@/server/services/onboarding";
 import { submitCheckpointAction } from "./actions";
 
 export function CheckpointForm({ day, questions }: { day: number; questions: AssessmentQuestionView[] }) {
+  const t = useT();
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const complete = questions.every((q) => !q.isRequired || (values[q.key] ?? "").trim());
 
   return (
-    <section className="mt-8 space-y-6">
-      <h2 className="font-display text-[28px] leading-tight">How true is this today?</h2>
+    <section className="mt-8 space-y-4">
+      <h2 className="font-display text-[30px] leading-tight">{t("checkpoint.form.title")}</h2>
       {questions.map((q) =>
         q.type === "scale" ? (
-          <div key={q.key}>
-            <p className="text-[15px] font-medium">{q.prompt}</p>
-            <div role="radiogroup" aria-label={q.prompt} className="mt-2 grid grid-cols-5 gap-1.5">
-              {q.options.map((o) => (
-                <button
-                  key={o.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={values[q.key] === o.value}
-                  onClick={() => setValues({ ...values, [q.key]: o.value })}
-                  className={cn(
-                    "rounded-xl border px-1 py-2.5 text-[12px] leading-tight transition",
-                    values[q.key] === o.value ? "border-ink bg-ink text-bg" : "border-line bg-surface",
-                  )}
-                >
-                  {o.label}
-                </button>
-              ))}
+          <div key={q.key} className="rounded-[24px] bg-surface p-4 shadow-card">
+            <p className="text-[15px] font-medium leading-snug">{q.prompt}</p>
+            <div role="radiogroup" aria-label={q.prompt} className="mt-3 flex flex-wrap gap-2">
+              {q.options.map((o) => {
+                const on = values[q.key] === o.value;
+                return (
+                  <button
+                    key={o.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    onClick={() => setValues({ ...values, [q.key]: o.value })}
+                    className={cn(
+                      "rounded-full px-3.5 py-2 text-[13px] leading-tight transition active:scale-[0.98]",
+                      on ? "bg-hero text-hero-ink shadow-card" : "bg-surface-2 text-ink hover:bg-accent-soft",
+                    )}
+                  >
+                    {o.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         ) : (
-          <div key={q.key}>
-            <label htmlFor={q.key} className="text-[15px] font-medium">
+          <div key={q.key} className="rounded-[24px] bg-surface p-4 shadow-card">
+            <label htmlFor={q.key} className="text-[15px] font-medium leading-snug">
               {q.prompt}
             </label>
             <textarea
@@ -48,7 +53,7 @@ export function CheckpointForm({ day, questions }: { day: number; questions: Ass
               value={values[q.key] ?? ""}
               onChange={(e) => setValues({ ...values, [q.key]: e.target.value })}
               maxLength={2000}
-              className="mt-2 min-h-28 w-full resize-none rounded-2xl border border-line bg-surface p-4 text-[16px] outline-none focus:border-ink/40"
+              className="mt-2.5 min-h-28 w-full resize-none rounded-[18px] border border-line bg-bg/40 p-4 text-[16px] outline-none focus:border-accent/50"
             />
           </div>
         ),
@@ -63,7 +68,7 @@ export function CheckpointForm({ day, questions }: { day: number; questions: Ass
           })
         }
       >
-        {pending ? "Saving…" : "See before → now"}
+        {pending ? t("common.saving") : t("checkpoint.form.submit")}
       </Button>
     </section>
   );

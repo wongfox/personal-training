@@ -9,9 +9,9 @@ const base =
   "inline-flex items-center justify-center gap-2 rounded-full font-medium transition-[transform,background-color,color,opacity] duration-150 active:scale-[0.98] disabled:pointer-events-none disabled:border-transparent disabled:bg-surface-2 disabled:text-muted select-none";
 
 const variants: Record<Variant, string> = {
-  primary: "bg-ink text-bg hover:bg-ink/90",
+  primary: "bg-hero text-hero-ink shadow-card hover:brightness-110",
   accent: "bg-accent text-accent-ink hover:brightness-105",
-  secondary: "bg-surface text-ink border border-line hover:bg-surface-2",
+  secondary: "bg-surface text-ink border border-line shadow-card hover:bg-surface-2",
   ghost: "text-ink-2 hover:text-ink hover:bg-surface-2",
   danger: "bg-danger-soft text-danger hover:brightness-95",
 };

@@ -1,6 +1,8 @@
 "use client";
 
 import { useActionState } from "react";
+import { buttonClass } from "@/components/ui/button";
+import { useT } from "@/i18n/client";
 import { cn } from "@/lib/cn";
 
 export interface AdminFormState {
@@ -14,7 +16,7 @@ type Action = (prev: AdminFormState, formData: FormData) => Promise<AdminFormSta
 export function AdminForm({
   action,
   children,
-  submitLabel = "Save",
+  submitLabel,
   className,
   hidden,
 }: {
@@ -24,14 +26,15 @@ export function AdminForm({
   className?: string;
   hidden?: Record<string, string>;
 }) {
+  const t = useT();
   const [state, formAction, pending] = useActionState(action, {});
   return (
     <form action={formAction} className={cn("space-y-5", className)}>
       {hidden && Object.entries(hidden).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
       {children}
       <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
-        <button type="submit" disabled={pending} className="rounded-full bg-ink px-5 py-2.5 text-[14px] font-medium text-bg disabled:opacity-50">
-          {pending ? "Saving…" : submitLabel}
+        <button type="submit" disabled={pending} className={buttonClass("primary", "md")}>
+          {pending ? t("common.saving") : (submitLabel ?? t("common.save"))}
         </button>
         {state.error && (
           <p role="alert" className="text-[14px] text-danger">
@@ -62,6 +65,7 @@ export function ActionButton({
   tone?: "default" | "danger";
   confirm?: string;
 }) {
+  const t = useT();
   const [state, formAction, pending] = useActionState(action, {});
   return (
     <form
@@ -74,15 +78,8 @@ export function ActionButton({
       {Object.entries(hidden).map(([k, v]) => (
         <input key={k} type="hidden" name={k} value={v} />
       ))}
-      <button
-        type="submit"
-        disabled={pending}
-        className={cn(
-          "rounded-full border px-3.5 py-1.5 text-[13px] font-medium disabled:opacity-50",
-          tone === "danger" ? "border-danger/30 text-danger hover:bg-danger-soft" : "border-line hover:bg-surface-2",
-        )}
-      >
-        {pending ? "…" : label}
+      <button type="submit" disabled={pending} className={buttonClass(tone === "danger" ? "danger" : "secondary", "sm", "h-8 px-3.5 text-[13px]")}>
+        {pending ? t("admin.form.working") : label}
       </button>
       {state.error && <span className="mt-1 text-[12px] text-danger">{state.error}</span>}
     </form>

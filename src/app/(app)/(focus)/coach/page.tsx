@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { getTranslator } from "@/i18n/server";
 import { aiEnabled } from "@/server/ai/client";
 import { requireUser } from "@/server/auth/current-user";
 import { getDb } from "@/server/db";
@@ -8,7 +9,10 @@ import { getConversation, listConversations } from "@/server/services/coach";
 import { uuidSchema } from "@/server/validation";
 import { CoachChat } from "./chat";
 
-export const metadata: Metadata = { title: "AI Coach" };
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getTranslator();
+  return { title: t("coach.title") };
+}
 
 export default async function CoachPage({ searchParams }: PageProps<"/coach">) {
   const user = await requireUser();

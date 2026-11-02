@@ -35,6 +35,7 @@ import { leadTheRoom } from "./content/lead-the-room";
 import { practiceTools } from "./content/practice";
 import { resources as resourceSeeds } from "./content/resources";
 import { sharperThinking } from "./content/sharper-thinking";
+import { seedTranslations } from "./translations-seed";
 import type { JourneySeed } from "./types";
 
 export const JOURNEY_SEEDS: JourneySeed[] = [communicationMastery, confidentPresence, leadTheRoom, sharperThinking, connectWithAnyone];
@@ -44,6 +45,8 @@ export interface SeedReport {
   lessons: number;
   practice: number;
   resources: number;
+  /** Rows that received a Spanish overlay this run. */
+  translations?: number;
 }
 
 async function skillIdMap(db: Executor) {
@@ -275,5 +278,7 @@ export async function seedContent(db: Executor, { force = false } = {}): Promise
 
 export async function seedAll(db: Executor, opts: { force?: boolean } = {}): Promise<SeedReport> {
   await seedReferenceData(db);
-  return seedContent(db, opts);
+  const report = await seedContent(db, opts);
+  report.translations = await seedTranslations(db, JOURNEY_SEEDS, opts);
+  return report;
 }

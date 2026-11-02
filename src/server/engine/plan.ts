@@ -1,7 +1,8 @@
 /**
  * Turns onboarding answers into a Personal Growth Plan.
  */
-import { categorySkill, GOALS, SKILLS, type GoalKey, type SkillKey } from "@/lib/taxonomy";
+import type { Locale } from "@/i18n/config";
+import { categorySkill, GOALS, skillName as taxonomySkillName, type GoalKey, type SkillKey } from "@/lib/taxonomy";
 import type { DifficultyLevel } from "@/server/db/types";
 
 export type Frequency = "daily" | "five_per_week" | "three_per_week";
@@ -104,6 +105,23 @@ export const FREQUENCY_LABEL: Record<Frequency, string> = {
   three_per_week: "3 days a week",
 };
 
+const FREQUENCY_LABEL_ES: Record<Frequency, string> = {
+  daily: "Todos los días",
+  five_per_week: "5 días a la semana",
+  three_per_week: "3 días a la semana",
+};
+
+export function frequencyLabel(frequency: Frequency, locale: Locale = "en"): string {
+  return (locale === "es" ? FREQUENCY_LABEL_ES : FREQUENCY_LABEL)[frequency];
+}
+
+/** The plan's name, e.g. "Juan's Growth Plan" / "Plan de crecimiento de Juan". */
+export function planTitle(firstName: string, locale: Locale = "en"): string {
+  const name = firstName.trim().split(/\s+/)[0];
+  if (locale === "es") return name ? `Plan de crecimiento de ${name}` : "Tu plan de crecimiento";
+  return name ? `${name}'s Growth Plan` : "Your Growth Plan";
+}
+
 export interface PlanDraft {
   title: string;
   primaryGoal: GoalKey;
@@ -117,13 +135,12 @@ export interface PlanDraft {
   focusSkills: SkillKey[];
 }
 
-export function buildPlan(firstName: string, a: OnboardingAnswers, journeys: JourneyOption[]): PlanDraft {
+export function buildPlan(firstName: string, a: OnboardingAnswers, journeys: JourneyOption[], locale: Locale = "en"): PlanDraft {
   const primaryGoal = a.goals.includes(a.primaryGoal) ? a.primaryGoal : (a.goals[0] ?? "communication");
   const secondaryGoals = a.goals.filter((g) => g !== primaryGoal).slice(0, 3);
   const focusSkills = [...new Set([primaryGoal, ...secondaryGoals].map(goalSkill))];
-  const name = firstName.trim().split(/\s+/)[0] || "Your";
   return {
-    title: name === "Your" ? "Your Growth Plan" : `${name}'s Growth Plan`,
+    title: planTitle(firstName, locale),
     primaryGoal,
     secondaryGoals,
     journey: pickJourney(primaryGoal, journeys),
@@ -136,6 +153,6 @@ export function buildPlan(firstName: string, a: OnboardingAnswers, journeys: Jou
   };
 }
 
-export function skillName(key: string): string {
-  return SKILLS.find((s) => s.key === key)?.name ?? key;
+export function skillName(key: string, locale: Locale = "en"): string {
+  return taxonomySkillName(key, locale);
 }

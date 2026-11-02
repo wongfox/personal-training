@@ -1,41 +1,49 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { categoryName, RESOURCE_TYPE_LABELS } from "@/lib/taxonomy";
+import { buttonClass } from "@/components/ui/button";
+import { getTranslator } from "@/i18n/server";
 import { requirePermission } from "@/server/auth/current-user";
 import { getDb } from "@/server/db";
 import { listResourcesAdmin } from "@/server/services/admin";
-import { PageHeader, StatusBadge, Table } from "../../ui";
+import { EsMissingBadge, formatDate, PageHeader, StatusBadge, Table } from "../../ui";
 
-export const metadata: Metadata = { title: "Explore library" };
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getTranslator();
+  return { title: t("admin.resource.listTitle") };
+}
 
 export default async function ResourcesAdminPage() {
   await requirePermission("content:read");
+  const { t, locale } = await getTranslator();
   const rows = await listResourcesAdmin(getDb());
   return (
     <div className="max-w-6xl">
       <PageHeader
-        title="Explore library"
-        crumbs={[{ href: "/admin/content", label: "Content" }]}
+        title={t("admin.resource.listTitle")}
+        crumbs={[{ href: "/admin/content", label: t("admin.content.title") }]}
         action={
-          <Link href="/admin/content/resources/new" className="rounded-full bg-ink px-4 py-2 text-[14px] font-medium text-bg">
-            New resource
+          <Link href="/admin/content/resources/new" className={buttonClass("primary", "sm")}>
+            {t("admin.resource.new")}
           </Link>
         }
       />
-      <Table head={["Title", "Type", "Category", "Status", "Updated"]}>
+      <Table head={[t("admin.resource.head.title"), t("admin.resource.head.type"), t("admin.resource.head.category"), t("admin.resource.head.status"), t("admin.resource.head.updated")]}>
         {rows.map((r) => (
           <tr key={r.id} className="hover:bg-surface-2">
             <td className="px-4 py-3">
-              <Link href={`/admin/content/resources/${r.id}`} className="font-medium hover:underline">
-                {r.title}
-              </Link>
+              <div className="flex flex-wrap items-center gap-2">
+                <Link href={`/admin/content/resources/${r.id}`} className="font-medium hover:underline">
+                  {r.title}
+                </Link>
+                {!r.hasEs && <EsMissingBadge />}
+              </div>
             </td>
-            <td className="px-4 py-3 text-[13px]">{RESOURCE_TYPE_LABELS[r.type]}</td>
-            <td className="px-4 py-3 text-[13px]">{categoryName(r.category)}</td>
+            <td className="px-4 py-3 text-[13px]">{t(`taxonomy.resourceTypes.${r.type}`)}</td>
+            <td className="px-4 py-3 text-[13px]">{t(`taxonomy.categories.${r.category}`)}</td>
             <td className="px-4 py-3">
               <StatusBadge status={r.status} />
             </td>
-            <td className="px-4 py-3 text-[13px] text-ink-2">{r.updatedAt.toISOString().slice(0, 10)}</td>
+            <td className="whitespace-nowrap px-4 py-3 text-[13px] text-ink-2">{formatDate(r.updatedAt, locale)}</td>
           </tr>
         ))}
       </Table>

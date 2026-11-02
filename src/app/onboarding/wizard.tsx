@@ -1,11 +1,14 @@
 "use client";
 
-import { ArrowLeft, Check } from "lucide-react";
+import { ArrowLeft, CalendarClock, Check, Gauge, Target } from "lucide-react";
 import { useMemo, useRef, useState, useTransition } from "react";
 import { LogoMark } from "@/components/brand";
+import { LanguageSwitcher } from "@/components/language-switcher";
+import { DawnScene } from "@/components/scene";
 import { Button } from "@/components/ui/button";
 import { FormAlert } from "@/components/ui/field";
 import { ProgressBar } from "@/components/ui/primitives";
+import { useT } from "@/i18n/client";
 import { cn } from "@/lib/cn";
 import type { AssessmentQuestionView } from "@/server/services/onboarding";
 import { submitOnboarding } from "./actions";
@@ -13,6 +16,7 @@ import { submitOnboarding } from "./actions";
 type Answer = string | string[];
 
 export function OnboardingWizard({ firstName, questions }: { firstName: string; questions: AssessmentQuestionView[] }) {
+  const t = useT();
   const [step, setStep] = useState(-1); // -1 = intro
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
   const [error, setError] = useState<string | null>(null);
@@ -85,21 +89,43 @@ export function OnboardingWizard({ firstName, questions }: { firstName: string; 
   }
 
   if (step === -1) {
+    const points = [
+      { key: "goals", icon: Target },
+      { key: "rhythm", icon: CalendarClock },
+      { key: "baseline", icon: Gauge },
+    ] as const;
     return (
       <Shell>
-        <div className="flex flex-1 flex-col justify-center animate-rise">
-          <LogoMark size={44} />
-          <h1 className="mt-8 font-display text-[44px] leading-[1.02]">
-            Hi {firstName}.
+        <header className="flex items-center justify-between gap-3 py-2">
+          <LogoMark size={36} />
+          <LanguageSwitcher />
+        </header>
+        <div className="flex flex-1 flex-col justify-center py-6 animate-rise">
+          {/* The dawn scene is light in both themes, so its label keeps fixed colours. */}
+          <div className="relative isolate h-[150px] overflow-hidden rounded-[28px] p-5 shadow-card">
+            <DawnScene className="absolute inset-0 -z-10" />
+            <span className="inline-flex rounded-full bg-[#fffcf7]/85 px-3.5 py-1.5 text-[12px] font-semibold text-[#2e4a3b] backdrop-blur">
+              {t("onboarding.intro.eyebrow")}
+            </span>
+          </div>
+          <h1 className="mt-7 font-display text-[42px] leading-[1.02] tracking-[-0.01em]">
+            {t("onboarding.intro.greeting", { name: firstName })}
             <br />
-            <span className="text-muted">Let&apos;s build your plan.</span>
+            <span className="italic text-ink-2">{t("onboarding.intro.title")}</span>
           </h1>
-          <p className="mt-5 max-w-sm text-[16px] leading-relaxed text-ink-2">
-            A few quick questions — about three minutes. Your answers shape your goals, your daily training and how we
-            measure your progress at day 30, 60 and 90.
-          </p>
+          <p className="mt-4 max-w-sm text-[16px] leading-relaxed text-ink-2">{t("onboarding.intro.body")}</p>
+          <ul className="mt-6 grid grid-cols-3 gap-2.5">
+            {points.map(({ key, icon: Icon }) => (
+              <li key={key} className="flex flex-col items-center gap-2 rounded-[22px] bg-surface px-2 py-4 text-center shadow-card">
+                <span className="grid h-10 w-10 place-items-center rounded-2xl bg-accent-soft text-accent" aria-hidden>
+                  <Icon size={19} strokeWidth={1.8} />
+                </span>
+                <span className="text-[12px] font-medium leading-tight text-ink-2">{t(`onboarding.intro.points.${key}`)}</span>
+              </li>
+            ))}
+          </ul>
         </div>
-        <Button onClick={() => setStep(0)}>Begin</Button>
+        <Button onClick={() => setStep(0)}>{t("onboarding.intro.begin")}</Button>
       </Shell>
     );
   }
@@ -109,24 +135,27 @@ export function OnboardingWizard({ firstName, questions }: { firstName: string; 
 
   return (
     <Shell>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 pt-1">
         <button
           type="button"
           onClick={() => setStep((s) => s - 1)}
-          className="-ml-2 grid h-10 w-10 place-items-center rounded-full text-ink-2 hover:bg-surface-2"
-          aria-label="Back"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-surface text-ink-2 shadow-card transition hover:text-ink"
+          aria-label={t("common.back")}
         >
-          <ArrowLeft size={20} />
+          <ArrowLeft size={19} />
         </button>
-        <ProgressBar value={((step + 1) / total) * 100} label="Onboarding progress" />
+        <ProgressBar value={((step + 1) / total) * 100} label={t("onboarding.progress")} tone="accent" className="h-2" />
         <span className="w-12 text-right text-[12px] tabular-nums text-muted">
-          {step + 1}/{total}
+          <span aria-hidden>
+            {step + 1}/{total}
+          </span>
+          <span className="sr-only">{t("onboarding.stepOf", { current: step + 1, total })}</span>
         </span>
       </div>
 
       <div key={q.key} className="flex flex-1 flex-col pt-8 animate-rise">
         <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
-          {isRating ? "How true is this today?" : q.section}
+          {isRating ? t("onboarding.ratingEyebrow") : q.section}
         </p>
         <h1 className="mt-3 font-display text-[32px] leading-[1.08]">{q.prompt}</h1>
         {q.helpText && <p className="mt-2 text-[15px] text-ink-2">{q.helpText}</p>}
@@ -138,27 +167,40 @@ export function OnboardingWizard({ firstName, questions }: { firstName: string; 
               value={(value as string) ?? ""}
               onChange={(e) => setAnswers({ ...answers, [q.key]: e.target.value })}
               maxLength={500}
-              placeholder="e.g. Present to leadership without notes and get a clear decision."
-              className="min-h-36 w-full resize-none rounded-2xl border border-line bg-surface p-4 text-[17px] leading-relaxed outline-none placeholder:text-muted focus:border-ink/40"
+              placeholder={t("onboarding.textPlaceholder")}
+              className="min-h-40 w-full resize-none rounded-[22px] border border-line bg-surface p-5 text-[17px] leading-relaxed shadow-card outline-none placeholder:text-muted focus:border-accent/50"
               aria-label={q.prompt}
             />
           ) : isRating ? (
             <div role="radiogroup" aria-label={q.prompt} className="space-y-2.5">
-              {options.map((o) => (
-                <OptionTile key={o.value} selected={value === o.value} onClick={() => choose(o.value)} role="radio">
-                  <span className="flex items-center gap-3">
-                    <span className="flex gap-1" aria-hidden>
-                      {[1, 2, 3, 4, 5].map((n) => (
-                        <span key={n} className={cn("h-1.5 w-3 rounded-full", n <= Number(o.value) ? "bg-accent" : "bg-surface-2")} />
-                      ))}
+              {options.map((o) => {
+                const selected = value === o.value;
+                return (
+                  <OptionTile key={o.value} selected={selected} onClick={() => choose(o.value)} role="radio">
+                    <span className="flex items-center gap-3">
+                      <span className="flex gap-1" aria-hidden>
+                        {[1, 2, 3, 4, 5].map((n) => (
+                          <span
+                            key={n}
+                            className={cn(
+                              "h-1.5 w-3 rounded-full",
+                              n <= Number(o.value) ? (selected ? "bg-sun" : "bg-accent") : selected ? "bg-hero-ink/25" : "bg-surface-2",
+                            )}
+                          />
+                        ))}
+                      </span>
+                      {o.label}
                     </span>
-                    {o.label}
-                  </span>
-                </OptionTile>
-              ))}
+                  </OptionTile>
+                );
+              })}
             </div>
           ) : (
-            <div role={q.type === "multi" ? "group" : "radiogroup"} aria-label={q.prompt} className={cn(q.type === "multi" && q.key === "goals" ? "grid grid-cols-2 gap-2.5" : "space-y-2.5")}>
+            <div
+              role={q.type === "multi" ? "group" : "radiogroup"}
+              aria-label={q.prompt}
+              className={cn(q.type === "multi" && q.key === "goals" ? "grid grid-cols-2 gap-2.5" : "space-y-2.5")}
+            >
               {options.map((o) => {
                 const selected = q.type === "multi" ? ((value as string[]) ?? []).includes(o.value) : value === o.value;
                 return (
@@ -169,9 +211,13 @@ export function OnboardingWizard({ firstName, questions }: { firstName: string; 
                     role={q.type === "multi" ? "checkbox" : "radio"}
                     compact={q.key === "goals"}
                   >
-                    <span>
+                    <span className="min-w-0">
                       <span className="block">{o.label}</span>
-                      {o.description && <span className="mt-0.5 block text-[13px] font-normal text-muted">{o.description}</span>}
+                      {o.description && (
+                        <span className={cn("mt-0.5 block text-[13px] font-normal", selected ? "text-hero-ink/75" : "text-muted")}>
+                          {o.description}
+                        </span>
+                      )}
                     </span>
                   </OptionTile>
                 );
@@ -181,11 +227,17 @@ export function OnboardingWizard({ firstName, questions }: { firstName: string; 
         </div>
       </div>
 
-      {error && <div className="mb-3"><FormAlert>{error}</FormAlert></div>}
+      {error && (
+        <div className="mb-3">
+          <FormAlert>{error}</FormAlert>
+        </div>
+      )}
       {(q.type === "multi" || q.type === "text" || step + 1 === total) && (
-        <Button onClick={() => next()} disabled={!canContinue || pending} aria-busy={pending}>
-          {pending ? "Building your plan…" : step + 1 === total ? "Build my plan" : "Continue"}
-        </Button>
+        <div className="pt-5">
+          <Button onClick={() => next()} disabled={!canContinue || pending} aria-busy={pending}>
+            {pending ? t("onboarding.building") : step + 1 === total ? t("onboarding.submit") : t("common.continue")}
+          </Button>
+        </div>
       )}
     </Shell>
   );
@@ -193,7 +245,7 @@ export function OnboardingWizard({ firstName, questions }: { firstName: string; 
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col px-6 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+    <div className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col px-5 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))]">
       {children}
     </div>
   );
@@ -219,16 +271,16 @@ function OptionTile({
       aria-checked={selected}
       onClick={onClick}
       className={cn(
-        "flex w-full items-center justify-between gap-3 rounded-2xl border bg-surface text-left text-[15px] font-medium transition active:scale-[0.99]",
-        compact ? "min-h-14 px-4 py-3" : "min-h-16 px-4 py-3.5",
-        selected ? "border-ink shadow-card" : "border-line hover:border-ink/30",
+        "flex w-full items-center justify-between gap-3 rounded-[22px] text-left text-[15px] font-medium shadow-card transition active:scale-[0.99]",
+        compact ? "min-h-14 px-4 py-3" : "min-h-16 px-5 py-3.5",
+        selected ? "bg-hero text-hero-ink" : "bg-surface text-ink hover:bg-surface-2",
       )}
     >
       {children}
       <span
         className={cn(
           "grid h-6 w-6 shrink-0 place-items-center rounded-full border transition",
-          selected ? "border-ink bg-ink text-bg" : "border-line",
+          selected ? "border-hero-ink bg-hero-ink text-hero" : "border-line",
         )}
         aria-hidden
       >

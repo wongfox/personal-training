@@ -1,6 +1,9 @@
 "use server";
 
+import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
+import { getTranslator } from "@/i18n/server";
+import type { TFunction } from "@/i18n/translate";
 import {
   deleteSessionCookie,
   getRequestMeta,
@@ -11,6 +14,7 @@ import { rateLimit } from "@/server/auth/rate-limit";
 import { can } from "@/server/auth/rbac";
 import { createSession, invalidateSession, invalidateUserSessions, validateSessionToken } from "@/server/auth/sessions";
 import { getDb } from "@/server/db";
+import { profiles } from "@/server/db/schema";
 import { appUrl, audit, sendEmail, track } from "@/server/platform";
 import { authenticate, createEmailVerification, createPasswordReset, registerUser, resetPassword } from "@/server/services/accounts";
 import {
@@ -34,6 +38,8 @@ function value(formData: FormData, key: string): string {
 }
 
 export async function registerAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  // Resolve the visitor's language before a session exists: afterwards it would read the new profile's default.
+  const { t, locale } = await getTranslator();
   const raw = {
     name: value(formData, "name"),
     email: value(formData, "email"),
@@ -47,39 +53,43 @@ export async function registerAction(_prev: FormState, formData: FormData): Prom
   const db = getDb();
   const meta = await getRequestMeta();
   const limit = await rateLimit(db, `register:${meta.ipAddress ?? "unknown"}`, 5, 3600);
-  if (!limit.allowed) return { error: "Too many sign-ups from this network. Try again later.", values: keep };
+  if (!limit.allowed) return { error: t("auth.errors.tooManySignups"), values: keep };
 
   const result = await registerUser(db, parsed.data);
-  if (!result.ok) return { fields: { email: "An account with this email already exists." }, values: keep };
+  if (!result.ok) return { fields: { email: t("auth.errors.emailTaken") }, values: keep };
+  // Keep the language the visitor picked before signing up.
+  await db.update(profiles).set({ locale }).where(eq(profiles.userId, result.userId));
 
   const session = await createSession(db, result.userId, meta);
   await setSessionCookie(session.token, session.expiresAt);
   await audit(db, { actorId: result.userId, action: "auth.register", entityType: "user", entityId: result.userId, ipAddress: meta.ipAddress });
   await track(db, result.userId, "onboarding_started");
-  await sendVerificationEmail(result.userId, parsed.data.email, parsed.data.name);
+  await sendVerificationEmail(t, result.userId, parsed.data.email, parsed.data.name);
   redirect("/onboarding");
 }
 
-async function sendVerificationEmail(userId: string, email: string, name: string) {
+async function sendVerificationEmail(t: TFunction, userId: string, email: string, name: string) {
   const token = await createEmailVerification(getDb(), userId);
   await sendEmail({
     to: email,
-    subject: "Confirm your email for Personal Growth OS",
-    text: `Hi ${name},\n\nConfirm this is your address (the link is valid for 3 days):\n${appUrl(`/verify-email?token=${encodeURIComponent(token)}`)}\n\nIf you didn't create an account, ignore this email.`,
+    subject: t("auth.email.verifySubject"),
+    text: t("auth.email.verifyBody", { name, link: appUrl(`/verify-email?token=${encodeURIComponent(token)}`) }),
   });
 }
 
 export async function resendVerificationAction(): Promise<{ ok?: string; error?: string }> {
+  const { t } = await getTranslator();
   const session = await getSession();
-  if (!session) return { error: "Sign in first." };
+  if (!session) return { error: t("auth.errors.signInFirst") };
   const db = getDb();
   const limit = await rateLimit(db, `verify-resend:${session.user.id}`, 3, 3600);
-  if (!limit.allowed) return { error: "We've sent a few already — check your inbox and spam folder." };
-  await sendVerificationEmail(session.user.id, session.user.email, session.user.name);
-  return { ok: "Sent. Check your inbox." };
+  if (!limit.allowed) return { error: t("auth.errors.resendLimit") };
+  await sendVerificationEmail(t, session.user.id, session.user.email, session.user.name);
+  return { ok: t("auth.errors.resendSent") };
 }
 
 export async function loginAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const { t } = await getTranslator();
   const raw = { email: value(formData, "email"), password: value(formData, "password") };
   const keep = { email: raw.email };
   const parsed = loginSchema.safeParse(raw);
@@ -96,14 +106,15 @@ export async function loginAction(_prev: FormState, formData: FormData): Promise
   ]);
   if (!byIp.allowed || !byAccount.allowed || !accountCeiling.allowed) {
     await audit(db, { actorId: null, action: "auth.login_locked", entityType: "user", metadata: { email: parsed.data.email }, ipAddress: meta.ipAddress });
-    return { error: `Too many attempts. Try again in ${Math.ceil(Math.max(byIp.retryAfterSeconds, byAccount.retryAfterSeconds, accountCeiling.retryAfterSeconds) / 60)} minutes.`, values: keep };
+    const minutes = Math.ceil(Math.max(byIp.retryAfterSeconds, byAccount.retryAfterSeconds, accountCeiling.retryAfterSeconds) / 60);
+    return { error: t("auth.errors.tooManyAttemptsIn", { count: minutes }), values: keep };
   }
 
   const result = await authenticate(db, parsed.data.email, parsed.data.password);
   if (!result.ok) {
     await audit(db, { actorId: null, action: "auth.login_failed", entityType: "user", metadata: { email: parsed.data.email, reason: result.error }, ipAddress: meta.ipAddress });
     return {
-      error: result.error === "suspended" ? "This account is suspended. Contact support." : "Email or password is incorrect.",
+      error: result.error === "suspended" ? t("auth.errors.suspended") : t("auth.errors.invalidCredentials"),
       values: keep,
     };
   }
@@ -124,12 +135,12 @@ export async function logoutAction(): Promise<void> {
   redirect("/login");
 }
 
-const FORGOT_MESSAGE = "If an account exists for that email, a reset link is on its way. It expires in 1 hour.";
-
 export async function forgotPasswordAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const { t } = await getTranslator();
   const parsed = forgotPasswordSchema.safeParse({ email: value(formData, "email") });
   if (!parsed.success) return { fields: fieldErrors(parsed.error) };
 
+  const sent = t("auth.forgot.sent");
   const db = getDb();
   const meta = await getRequestMeta();
   const [byIp, byAccount] = await Promise.all([
@@ -137,34 +148,35 @@ export async function forgotPasswordAction(_prev: FormState, formData: FormData)
     rateLimit(db, `forgot:${parsed.data.email}`, 3, 3600),
   ]);
   // Same response either way so the endpoint can't be used to probe accounts.
-  if (!byIp.allowed || !byAccount.allowed) return { success: FORGOT_MESSAGE };
+  if (!byIp.allowed || !byAccount.allowed) return { success: sent };
 
   const reset = await createPasswordReset(db, parsed.data.email);
   if (reset) {
     const link = appUrl(`/reset-password?token=${encodeURIComponent(reset.token)}`);
     await sendEmail({
       to: parsed.data.email,
-      subject: "Reset your Personal Growth OS password",
-      text: `Hi ${reset.name},\n\nUse this link to choose a new password (valid for 1 hour):\n${link}\n\nIf you didn't ask for this, you can ignore this email.`,
+      subject: t("auth.email.resetSubject"),
+      text: t("auth.email.resetBody", { name: reset.name, link }),
     });
   }
-  return { success: FORGOT_MESSAGE };
+  return { success: sent };
 }
 
 export async function resetPasswordAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const { t } = await getTranslator();
   const parsed = resetPasswordSchema.safeParse({ token: value(formData, "token"), password: value(formData, "password") });
   if (!parsed.success) {
     const fields = fieldErrors(parsed.error);
-    if (fields.token) return { error: "This reset link is invalid. Request a new one." };
+    if (fields.token) return { error: t("auth.errors.resetInvalid") };
     return { fields };
   }
   const db = getDb();
   const meta = await getRequestMeta();
   const limit = await rateLimit(db, `reset-ip:${meta.ipAddress ?? "unknown"}`, 10, 3600);
-  if (!limit.allowed) return { error: "Too many attempts. Try again later." };
+  if (!limit.allowed) return { error: t("auth.errors.tooManyAttempts") };
 
   const userId = await resetPassword(db, parsed.data.token, parsed.data.password);
-  if (!userId) return { error: "This reset link has expired or was already used. Request a new one." };
+  if (!userId) return { error: t("auth.errors.resetExpired") };
 
   await invalidateUserSessions(db, userId);
   const session = await createSession(db, userId, meta);

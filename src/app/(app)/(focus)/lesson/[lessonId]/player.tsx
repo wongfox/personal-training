@@ -1,32 +1,26 @@
 "use client";
 
-import { ArrowRight, Check, Flame, Quote, Sparkles, Target, Trophy } from "lucide-react";
+import { ArrowRight, Check, Clock, Flame, Quote, Sparkles, Target, Trophy, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ExerciseRunner } from "@/components/exercises/exercise-runner";
+import { Rich } from "@/components/exercises/rich-text";
 import { FocusShell } from "@/components/focus-shell";
+import { LeafSprig } from "@/components/scene";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { FormAlert } from "@/components/ui/field";
 import { Pill } from "@/components/ui/primitives";
+import { useLocale, useT } from "@/i18n/client";
+import { INTL_LOCALE } from "@/i18n/config";
 import { postJSON } from "@/lib/api-client";
 import { cn } from "@/lib/cn";
-import { categoryName } from "@/lib/taxonomy";
 import type { OpenLessonView } from "@/server/services/learning";
 
-const STEPS = [
-  { key: "hook", label: "Today's idea" },
-  { key: "why", label: "Why it matters" },
-  { key: "concept", label: "Core concept" },
-  { key: "insight", label: "Expert insight" },
-  { key: "example", label: "Example" },
-  { key: "exercise", label: "Practise" },
-  { key: "challenge", label: "Real-world mission" },
-  { key: "reflection", label: "Reflect" },
-  { key: "check", label: "Knowledge check" },
-  { key: "complete", label: "Complete" },
-] as const;
+const STEPS = ["hook", "why", "concept", "insight", "example", "exercise", "challenge", "reflection", "check", "complete"] as const;
 
 const EXERCISE = 5;
+const CHALLENGE = 6;
+const REFLECTION = 7;
 const CHECK = 8;
 const COMPLETE = 9;
 
@@ -38,7 +32,7 @@ interface CompletionResult {
     totalXp: number;
     streak: { current: number; event: string | null };
     levelUp: { level: number; name: string } | null;
-    skill: { name: string; score: number; delta: number } | null;
+    skill: { key?: string; name: string; score: number; delta: number } | null;
     achievements: { key: string; title: string }[];
   };
   missionAttemptId: string | null;
@@ -47,6 +41,7 @@ interface CompletionResult {
 }
 
 export function LessonPlayer({ lesson }: { lesson: OpenLessonView }) {
+  const t = useT();
   const router = useRouter();
   const startStep = lesson.completed ? 0 : Math.min(lesson.currentStep, CHECK);
   const [step, setStep] = useState(startStep);
@@ -59,7 +54,7 @@ export function LessonPlayer({ lesson }: { lesson: OpenLessonView }) {
   const lastStepAt = useRef<number | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
   const c = lesson.content;
-  const current = STEPS[step];
+  const stepLabel = (i: number) => t(`lesson.steps.${STEPS[i]}`);
   const reflectionWords = reflection.trim() ? reflection.trim().split(/\s+/).length : 0;
 
   // Persist progress whenever the learner moves forward (queued if offline).
@@ -84,7 +79,7 @@ export function LessonPlayer({ lesson }: { lesson: OpenLessonView }) {
       setStep(COMPLETE);
       router.refresh();
     } catch (e) {
-      setCompleteError(e instanceof Error ? e.message : "Couldn't save. Try again.");
+      setCompleteError(e instanceof Error ? e.message : t("lesson.saveError"));
     }
   }
 
@@ -96,17 +91,23 @@ export function LessonPlayer({ lesson }: { lesson: OpenLessonView }) {
 
   const footer =
     step === COMPLETE ? (
-      <ButtonLink href="/home">Back to today</ButtonLink>
+      <ButtonLink href="/home">{t("common.backToToday")}</ButtonLink>
     ) : (
       <div className="space-y-2">
         {completeError && <FormAlert>{completeError}</FormAlert>}
         <Button onClick={next} disabled={!canContinue}>
-          {step === CHECK ? "Finish lesson" : step === 6 ? "I'll do it today" : step === 7 && reflectionWords < 4 ? "Skip for now" : "Continue"}
+          {step === CHECK
+            ? t("lesson.actions.finish")
+            : step === CHALLENGE
+              ? t("lesson.actions.commit")
+              : step === REFLECTION && reflectionWords < 4
+                ? t("common.skipForNow")
+                : t("common.continue")}
           <ArrowRight size={18} />
         </Button>
         {step > 0 && (
-          <button type="button" onClick={() => setStep((s) => s - 1)} className="w-full py-2 text-[14px] text-muted hover:text-ink">
-            Back
+          <button type="button" onClick={() => setStep((s) => s - 1)} className="w-full rounded-full py-2 text-[14px] text-muted hover:text-ink">
+            {t("common.back")}
           </button>
         )}
       </div>
@@ -118,11 +119,14 @@ export function LessonPlayer({ lesson }: { lesson: OpenLessonView }) {
         <div>
           <div className="flex gap-1" aria-hidden>
             {STEPS.map((s, i) => (
-              <span key={s.key} className={cn("h-1 flex-1 rounded-full transition-colors duration-300", i <= step ? "bg-ink" : "bg-surface-2")} />
+              <span
+                key={s}
+                className={cn("h-1.5 flex-1 rounded-full transition-colors duration-300", i < step ? "bg-accent" : i === step ? "bg-hero" : "bg-surface-2")}
+              />
             ))}
           </div>
-          <p className="mt-2 text-[12px] text-muted" aria-live="polite">
-            {current.label} · {step + 1} of {STEPS.length}
+          <p className="mt-2 text-[12px] font-medium text-muted" aria-live="polite">
+            {t("lesson.progress", { step: stepLabel(step), current: step + 1, total: STEPS.length })}
           </p>
         </div>
       }
@@ -133,36 +137,45 @@ export function LessonPlayer({ lesson }: { lesson: OpenLessonView }) {
         {step === 0 && (
           <section>
             <div className="flex flex-wrap gap-2">
-              <Pill>{categoryName(lesson.category)}</Pill>
-              <Pill>{lesson.estimatedMinutes} min</Pill>
-              {lesson.completed && <Pill className="bg-success-soft text-success">Completed</Pill>}
+              <Pill>{t(`taxonomy.categories.${lesson.category}`)}</Pill>
+              <Pill>
+                <Clock size={12} aria-hidden /> {t("common.minutes", { count: lesson.estimatedMinutes })}
+              </Pill>
+              {lesson.completed && (
+                <Pill className="bg-success-soft text-success">
+                  <Check size={12} strokeWidth={2.6} aria-hidden /> {t("lesson.completed")}
+                </Pill>
+              )}
             </div>
-            <h1 className="mt-5 font-display text-[38px] leading-[1.04]">{lesson.title}</h1>
-            <p className="mt-6 text-[20px] leading-relaxed text-ink-2">{c.hook}</p>
+            <StepEyebrow className="mt-6">{stepLabel(0)}</StepEyebrow>
+            <h1 className="mt-2 font-display text-[40px] leading-[1.04] tracking-[-0.01em]">{lesson.title}</h1>
+            <div className="mt-6 rounded-[28px] bg-accent-soft p-6">
+              <p className="font-display text-[22px] leading-[1.35] text-ink">{c.hook}</p>
+            </div>
           </section>
         )}
 
         {step === 1 && (
           <section>
-            <Eyebrow>Why it matters</Eyebrow>
-            <p className="mt-4 font-display text-[28px] leading-[1.2]">{c.whyItMatters}</p>
+            <StepEyebrow>{stepLabel(1)}</StepEyebrow>
+            <p className="mt-4 font-display text-[30px] leading-[1.2] tracking-[-0.01em]">{c.whyItMatters}</p>
           </section>
         )}
 
         {step === 2 && (
           <section>
-            <Eyebrow>Core concept</Eyebrow>
-            <h2 className="mt-3 font-display text-[30px] leading-tight">{c.coreConcept.title}</h2>
-            <div className="prose-lesson mt-5 text-[17px] leading-[1.65] text-ink-2">
+            <StepEyebrow>{stepLabel(2)}</StepEyebrow>
+            <h2 className="mt-3 font-display text-[32px] leading-[1.1] tracking-[-0.01em]">{c.coreConcept.title}</h2>
+            <div className="prose-lesson mt-5 space-y-4 text-[17px] leading-[1.65] text-ink-2">
               {c.coreConcept.body.map((p) => (
                 <p key={p}>{p}</p>
               ))}
             </div>
-            <ul className="mt-6 space-y-2.5 rounded-3xl bg-surface p-5 shadow-card">
+            <ul className="mt-6 space-y-3 rounded-[28px] bg-surface p-5 shadow-card">
               {c.coreConcept.keyPoints.map((k) => (
                 <li key={k} className="flex gap-3 text-[15px] leading-relaxed">
-                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-hidden />
-                  {k}
+                  <CheckDot />
+                  <span>{k}</span>
                 </li>
               ))}
             </ul>
@@ -171,13 +184,14 @@ export function LessonPlayer({ lesson }: { lesson: OpenLessonView }) {
 
         {step === 3 && (
           <section>
-            <Eyebrow>Expert insight</Eyebrow>
-            <figure className="mt-5 rounded-3xl bg-hero p-6 text-hero-ink">
-              <Quote size={26} className="text-accent" aria-hidden />
-              <blockquote className="mt-3 font-display text-[24px] leading-[1.3]">{c.expertInsight.text}</blockquote>
-              <figcaption className="mt-5 text-[14px] text-hero-ink/70">
+            <StepEyebrow>{stepLabel(3)}</StepEyebrow>
+            <figure className="relative mt-5 overflow-hidden rounded-[28px] bg-hero p-6 text-hero-ink shadow-card">
+              <LeafSprig className="absolute -top-2 -right-2 h-24 w-24 text-hero-ink/25" />
+              <Quote size={26} className="fill-hero-ink/15 text-hero-ink/70" aria-hidden />
+              <blockquote className="relative mt-3 font-display text-[25px] leading-[1.3]">{c.expertInsight.text}</blockquote>
+              <figcaption className="mt-5 text-[14px] text-hero-ink/75">
                 — {c.expertInsight.source}
-                {c.expertInsight.sourceDetail && <span className="block text-[13px] text-hero-ink/50">{c.expertInsight.sourceDetail}</span>}
+                {c.expertInsight.sourceDetail && <span className="block text-[13px] text-hero-ink/55">{c.expertInsight.sourceDetail}</span>}
               </figcaption>
             </figure>
           </section>
@@ -185,30 +199,40 @@ export function LessonPlayer({ lesson }: { lesson: OpenLessonView }) {
 
         {step === 4 && (
           <section>
-            <Eyebrow>Example</Eyebrow>
+            <StepEyebrow>{stepLabel(4)}</StepEyebrow>
             <p className="mt-4 text-[16px] leading-relaxed">{c.example.situation}</p>
             <div className="mt-5 space-y-3">
-              <div className="rounded-2xl border border-line p-4">
-                <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-muted">Before</p>
+              <div className="rounded-[24px] bg-surface-2 p-5">
+                <p className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-muted">
+                  <span className="grid h-5 w-5 place-items-center rounded-full bg-surface text-muted" aria-hidden>
+                    <X size={12} strokeWidth={2.6} />
+                  </span>
+                  {t("lesson.example.before")}
+                </p>
                 <p className="mt-2 text-[16px] leading-relaxed text-ink-2">{c.example.before}</p>
               </div>
-              <div className="rounded-2xl bg-surface p-4 shadow-card ring-1 ring-success/30">
-                <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-success">After</p>
+              <div className="rounded-[24px] bg-surface p-5 shadow-card ring-1 ring-success/30">
+                <p className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-success">
+                  <span className="grid h-5 w-5 place-items-center rounded-full bg-success text-surface" aria-hidden>
+                    <Check size={12} strokeWidth={3} />
+                  </span>
+                  {t("lesson.example.after")}
+                </p>
                 <p className="mt-2 text-[16px] font-medium leading-relaxed">{c.example.after}</p>
               </div>
             </div>
-            <p className="mt-5 text-[15px] leading-relaxed text-ink-2">
-              <span className="font-semibold text-ink">Why it works: </span>
-              {c.example.whyItWorks}
-            </p>
+            <div className="mt-4 rounded-[24px] bg-accent-soft p-5 text-[15px] leading-relaxed text-ink-2">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-accent">{t("lesson.example.whyItWorks")}</p>
+              <p className="mt-1.5">{c.example.whyItWorks}</p>
+            </div>
           </section>
         )}
 
         {step === EXERCISE && lesson.exercise && (
           <section>
-            <Eyebrow>Practise</Eyebrow>
-            <h2 className="mt-3 text-[22px] font-semibold leading-snug">{lesson.exercise.title}</h2>
-            <p className="mt-1.5 text-[15px] text-ink-2">{lesson.exercise.description}</p>
+            <StepEyebrow>{stepLabel(EXERCISE)}</StepEyebrow>
+            <h2 className="mt-3 font-display text-[28px] leading-[1.12]">{lesson.exercise.title}</h2>
+            <p className="mt-2 text-[15px] leading-relaxed text-ink-2">{lesson.exercise.description}</p>
             <div className="mt-6">
               <ExerciseRunner
                 exerciseId={lesson.exercise.id}
@@ -222,61 +246,65 @@ export function LessonPlayer({ lesson }: { lesson: OpenLessonView }) {
           </section>
         )}
 
-        {step === 6 && (
+        {step === CHALLENGE && (
           <section>
-            <Eyebrow>Real-world mission</Eyebrow>
+            <StepEyebrow>{stepLabel(CHALLENGE)}</StepEyebrow>
             {lesson.action ? (
               <>
-                <div className="mt-5 rounded-3xl bg-surface p-6 shadow-card">
-                  <span className="grid h-11 w-11 place-items-center rounded-full bg-accent-soft text-accent">
-                    <Target size={20} />
+                <div className="relative mt-5 overflow-hidden rounded-[28px] bg-hero p-6 text-hero-ink shadow-card">
+                  <LeafSprig className="absolute -top-2 -right-2 h-24 w-24 text-hero-ink/25" />
+                  <span className="grid h-12 w-12 place-items-center rounded-[16px] bg-hero-ink/12 text-hero-ink">
+                    <Target size={22} strokeWidth={1.8} />
                   </span>
-                  <h2 className="mt-4 font-display text-[28px] leading-tight">{lesson.action.title}</h2>
-                  <p className="mt-3 text-[16px] leading-relaxed text-ink-2">{lesson.action.description}</p>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <Pill>{lesson.action.estimatedMinutes} min</Pill>
-                    <Pill className="capitalize">{lesson.action.difficulty}</Pill>
+                  <h2 className="mt-4 max-w-[90%] font-display text-[28px] leading-[1.12]">{lesson.action.title}</h2>
+                  <p className="mt-3 text-[16px] leading-relaxed text-hero-ink/80">{lesson.action.description}</p>
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-hero-ink/12 px-3 py-1 text-[12px] font-medium">
+                      <Clock size={12} aria-hidden /> {t("common.minutes", { count: lesson.action.estimatedMinutes })}
+                    </span>
+                    <span className="inline-flex items-center rounded-full bg-hero-ink/12 px-3 py-1 text-[12px] font-medium">
+                      {t(`common.missionDifficulty.${lesson.action.difficulty}`)}
+                    </span>
                   </div>
                 </div>
                 {lesson.action.successCriteria && (
-                  <p className="mt-4 text-[14px] leading-relaxed text-ink-2">
-                    <span className="font-semibold text-ink">You&apos;ve done it when: </span>
-                    {lesson.action.successCriteria}
-                  </p>
+                  <div className="mt-4 flex gap-3 rounded-[24px] bg-surface p-5 shadow-card">
+                    <CheckDot />
+                    <p className="text-[15px] leading-relaxed text-ink-2">
+                      <span className="block text-[12px] font-semibold uppercase tracking-[0.12em] text-accent">{t("lesson.mission.doneWhen")}</span>
+                      <span className="mt-1 block">{lesson.action.successCriteria}</span>
+                    </p>
+                  </div>
                 )}
-                <p className="mt-6 text-[14px] text-muted">We&apos;ll ask you how it went later today.</p>
+                <p className="mt-6 text-center text-[14px] text-muted">{t("lesson.mission.later")}</p>
               </>
             ) : (
-              <p className="mt-4 text-ink-2">Use today&apos;s idea once before tonight.</p>
+              <p className="mt-4 rounded-[24px] bg-accent-soft p-5 text-[16px] leading-relaxed text-ink">{t("lesson.mission.fallback")}</p>
             )}
           </section>
         )}
 
-        {step === 7 && (
+        {step === REFLECTION && (
           <section>
-            <Eyebrow>Reflect</Eyebrow>
-            <h2 className="mt-3 font-display text-[28px] leading-tight">{c.reflectionPrompt}</h2>
+            <StepEyebrow>{stepLabel(REFLECTION)}</StepEyebrow>
+            <h2 className="mt-3 font-display text-[30px] leading-[1.15]">{c.reflectionPrompt}</h2>
             <textarea
               value={reflection}
               onChange={(e) => setReflection(e.target.value)}
               maxLength={2000}
-              placeholder="A sentence or two is enough."
-              className="mt-6 min-h-36 w-full resize-none rounded-2xl border border-line bg-surface p-4 text-[16px] leading-relaxed outline-none focus:border-ink/40"
+              placeholder={t("lesson.reflection.placeholder")}
+              className="mt-6 min-h-40 w-full resize-none rounded-[24px] border border-line bg-surface p-5 text-[16px] leading-relaxed shadow-card outline-none placeholder:text-muted focus:border-accent/50"
               aria-label={c.reflectionPrompt}
             />
-            <p className="mt-2 text-[13px] text-muted">
-              {reflectionWords === 0
-                ? "Optional — but writing it down is what makes it stick."
-                : reflectionWords < 4
-                  ? "Add a little more to save it as a reflection (+20 XP)."
-                  : "Saved with your lesson when you continue."}
+            <p className={cn("mt-2 px-1 text-[13px]", reflectionWords >= 4 ? "text-success" : "text-muted")}>
+              {reflectionWords === 0 ? t("lesson.reflection.empty") : reflectionWords < 4 ? t("lesson.reflection.tooShort") : t("lesson.reflection.ready")}
             </p>
           </section>
         )}
 
         {step === CHECK && lesson.quiz && (
           <section>
-            <Eyebrow>Knowledge check</Eyebrow>
+            <StepEyebrow>{stepLabel(CHECK)}</StepEyebrow>
             <QuizRunner
               quizId={lesson.quiz.id}
               questions={lesson.quiz.questions}
@@ -294,8 +322,17 @@ export function LessonPlayer({ lesson }: { lesson: OpenLessonView }) {
   );
 }
 
-function Eyebrow({ children }: { children: React.ReactNode }) {
-  return <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">{children}</p>;
+function StepEyebrow({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <p className={cn("text-[12px] font-semibold uppercase tracking-[0.14em] text-accent", className)}>{children}</p>;
+}
+
+/** Small filled circle with a check — the bullet used across lesson cards. */
+function CheckDot() {
+  return (
+    <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-accent text-accent-ink" aria-hidden>
+      <Check size={12} strokeWidth={3} />
+    </span>
+  );
 }
 
 function QuizRunner({
@@ -307,6 +344,7 @@ function QuizRunner({
   questions: { id: string; prompt: string; options: string[] }[];
   onDone: (xp: number) => void;
 }) {
+  const t = useT();
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<number[]>([]);
   const [checked, setChecked] = useState<{ correct: boolean; correctIndex: number; explanation: string } | null>(null);
@@ -323,7 +361,7 @@ function QuizRunner({
     try {
       setChecked(await postJSON(`/api/quizzes/${quizId}/check`, { questionId: q.id, answer: selected }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't check that.");
+      setError(e instanceof Error ? e.message : t("lesson.quiz.checkError"));
     } finally {
       setBusy(false);
     }
@@ -345,7 +383,7 @@ function QuizRunner({
       setFinal(res.score !== undefined ? res : { score: -1, total: questions.length });
       onDone(res.reward?.xp ?? 0);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't save your answers.");
+      setError(e instanceof Error ? e.message : t("lesson.quiz.saveError"));
     } finally {
       setBusy(false);
     }
@@ -353,21 +391,22 @@ function QuizRunner({
 
   if (final && final.score < 0) {
     return (
-      <div className="mt-6 rounded-3xl bg-surface p-6 text-center shadow-card">
-        <p className="font-display text-[28px] leading-tight">Answers saved offline.</p>
-        <p className="mt-3 text-[15px] text-ink-2">Your score appears as soon as you&apos;re back online.</p>
+      <div className="mt-6 rounded-[28px] bg-surface p-6 text-center shadow-card">
+        <p className="font-display text-[28px] leading-tight">{t("lesson.quiz.offlineTitle")}</p>
+        <p className="mt-3 text-[15px] text-ink-2">{t("lesson.quiz.offlineBody")}</p>
       </div>
     );
   }
 
   if (final) {
     return (
-      <div className="mt-6 rounded-3xl bg-surface p-6 text-center shadow-card">
-        <p className="font-display text-[44px] leading-none tabular-nums">
+      <div className="mt-6 rounded-[28px] bg-surface p-7 text-center shadow-card">
+        <p className="font-display text-[52px] leading-none tabular-nums">
           {final.score}/{final.total}
         </p>
-        <p className="mt-3 text-[15px] text-ink-2">
-          {final.score === final.total ? "Clean sweep. These ideas will come back for a quick review over the next weeks." : "Good — the ones you missed will come back in your reviews."}
+        <p className="sr-only">{t("lesson.quiz.scoreLabel", { score: final.score, total: final.total })}</p>
+        <p className="mx-auto mt-4 max-w-xs text-[15px] leading-relaxed text-ink-2">
+          {final.score === final.total ? t("lesson.quiz.perfect") : t("lesson.quiz.partial")}
         </p>
       </div>
     );
@@ -375,48 +414,56 @@ function QuizRunner({
 
   return (
     <div className="mt-4">
-      <p className="text-[13px] text-muted">
-        Question {index + 1} of {questions.length}
-      </p>
-      <h2 className="mt-2 text-[20px] font-semibold leading-snug">{q.prompt}</h2>
-      <div role="radiogroup" className="mt-5 space-y-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[13px] text-muted">{t("lesson.quiz.question", { current: index + 1, total: questions.length })}</p>
+        <span className="flex gap-1.5" aria-hidden>
+          {questions.map((qq, i) => (
+            <span key={qq.id} className={cn("h-2 w-2 rounded-full", i < index ? "bg-accent" : i === index ? "bg-hero" : "bg-surface-2")} />
+          ))}
+        </span>
+      </div>
+      <h2 className="mt-3 font-display text-[26px] leading-[1.18]">{q.prompt}</h2>
+      <div role="radiogroup" aria-label={q.prompt} className="mt-5 space-y-2.5">
         {q.options.map((o, i) => {
-          const isCorrect = checked && i === checked.correctIndex;
-          const isWrong = checked && i === selected && !checked.correct;
+          const isCorrect = !!checked && i === checked.correctIndex;
+          const isWrong = !!checked && i === selected && !checked.correct;
           return (
-            <button
+            <OptionTile
               key={i}
-              type="button"
-              role="radio"
-              aria-checked={selected === i}
+              selected={selected === i}
+              state={isCorrect ? "correct" : isWrong ? "wrong" : undefined}
               disabled={!!checked}
               onClick={() => setSelected(i)}
-              className={cn(
-                "flex w-full items-center justify-between gap-3 rounded-2xl border bg-surface px-4 py-3.5 text-left text-[15px] leading-relaxed transition",
-                isCorrect ? "border-success bg-success-soft" : isWrong ? "border-danger bg-danger-soft" : selected === i ? "border-ink shadow-card" : "border-line",
-              )}
             >
               {o}
-              {isCorrect && <Check size={18} className="shrink-0 text-success" strokeWidth={2.6} />}
-            </button>
+            </OptionTile>
           );
         })}
       </div>
       {checked && (
-        <div className="mt-4 animate-rise rounded-2xl bg-surface-2 p-4 text-[15px] leading-relaxed" aria-live="polite">
-          <p className={cn("font-semibold", checked.correct ? "text-success" : "text-danger")}>{checked.correct ? "Correct." : "Not quite."}</p>
+        <div
+          className={cn("mt-4 animate-rise rounded-[24px] p-5 text-[15px] leading-relaxed", checked.correct ? "bg-success-soft" : "bg-surface-2")}
+          aria-live="polite"
+        >
+          <p className={cn("font-semibold", checked.correct ? "text-success" : "text-danger")}>
+            {checked.correct ? t("lesson.quiz.correct") : t("lesson.quiz.notQuite")}
+          </p>
           <p className="mt-1 text-ink-2">{checked.explanation}</p>
         </div>
       )}
-      {error && <div className="mt-3"><FormAlert>{error}</FormAlert></div>}
+      {error && (
+        <div className="mt-3">
+          <FormAlert>{error}</FormAlert>
+        </div>
+      )}
       <div className="mt-5">
         {checked ? (
           <Button variant="secondary" onClick={advance} disabled={busy}>
-            {index + 1 < questions.length ? "Next question" : busy ? "Saving…" : "See my score"}
+            {index + 1 < questions.length ? t("lesson.quiz.next") : busy ? t("common.saving") : t("lesson.quiz.seeScore")}
           </Button>
         ) : (
           <Button variant="secondary" onClick={check} disabled={selected === null || busy}>
-            {busy ? "Checking…" : "Check"}
+            {busy ? t("lesson.quiz.checking") : t("lesson.quiz.check")}
           </Button>
         )}
       </div>
@@ -424,50 +471,118 @@ function QuizRunner({
   );
 }
 
+/** Rounded answer tile with a circular check mark on the left. */
+function OptionTile({
+  selected,
+  state,
+  disabled,
+  onClick,
+  children,
+}: {
+  selected: boolean;
+  state?: "correct" | "wrong";
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-center gap-3.5 rounded-[22px] border bg-surface px-4 py-4 text-left text-[15px] leading-relaxed transition active:scale-[0.99]",
+        state === "correct"
+          ? "border-success bg-success-soft"
+          : state === "wrong"
+            ? "border-danger bg-danger-soft"
+            : selected
+              ? "border-hero shadow-card"
+              : "border-line hover:border-ink/25",
+      )}
+    >
+      <span
+        className={cn(
+          "grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 transition",
+          state === "correct"
+            ? "border-success bg-success text-surface"
+            : state === "wrong"
+              ? "border-danger bg-danger text-surface"
+              : selected
+                ? "border-hero bg-hero text-hero-ink"
+                : "border-line",
+        )}
+        aria-hidden
+      >
+        {state === "wrong" ? <X size={13} strokeWidth={3} /> : (selected || state === "correct") && <Check size={13} strokeWidth={3} />}
+      </span>
+      <span className="min-w-0 flex-1">{children}</span>
+    </button>
+  );
+}
+
 function Completion({ result, earnedBefore, lessonTitle }: { result: CompletionResult; earnedBefore: number; lessonTitle: string }) {
+  const t = useT();
+  const locale = useLocale();
+  const nf = new Intl.NumberFormat(INTL_LOCALE[locale]);
   if (result.queued) {
     return (
       <section className="pt-10 text-center">
-        <h1 className="font-display text-[34px]">Saved offline.</h1>
-        <p className="mt-3 text-ink-2">Your lesson is stored on this device and will sync as soon as you&apos;re back online.</p>
+        <h1 className="font-display text-[34px]">{t("lesson.complete.offlineTitle")}</h1>
+        <p className="mx-auto mt-3 max-w-xs text-ink-2">{t("lesson.complete.offlineBody")}</p>
       </section>
     );
   }
   const r = result.reward;
   const total = r.xp + earnedBefore;
+  const skillLabel = r.skill ? (r.skill.key ? t(`taxonomy.skills.${r.skill.key}`) : r.skill.name) : t("lesson.complete.skill");
   return (
     <section className="pt-6 text-center">
-      <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-success-soft text-success animate-pop">
-        <Check size={36} strokeWidth={2.6} />
+      <div className="mx-auto grid h-24 w-24 place-items-center rounded-full bg-success-soft text-success animate-pop">
+        <span className="grid h-16 w-16 place-items-center rounded-full bg-success text-surface">
+          <Check size={34} strokeWidth={2.8} />
+        </span>
       </div>
-      <p className="mt-6 text-[12px] font-semibold uppercase tracking-[0.14em] text-muted">{result.alreadyCompleted ? "Reviewed" : "Lesson complete"}</p>
-      <h1 className="mt-2 font-display text-[34px] leading-tight">{lessonTitle}</h1>
+      <p className="mt-6 text-[12px] font-semibold uppercase tracking-[0.14em] text-accent">
+        {result.alreadyCompleted ? t("lesson.complete.reviewed") : t("lesson.complete.eyebrow")}
+      </p>
+      <h1 className="mt-2 font-display text-[34px] leading-[1.1]">{lessonTitle}</h1>
 
       <dl className="mt-8 grid grid-cols-3 gap-2.5 text-left">
-        <Stat icon={<Sparkles size={16} />} label="XP earned" value={`+${total}`} />
-        <Stat icon={<Flame size={16} />} label="Streak" value={`${r.streak.current} day${r.streak.current === 1 ? "" : "s"}`} />
-        <Stat icon={<Trophy size={16} />} label={r.skill?.name ?? "Skill"} value={r.skill ? `${r.skill.score}${r.skill.delta ? ` (+${r.skill.delta})` : ""}` : "—"} />
+        <Stat icon={<Sparkles size={16} />} label={t("lesson.complete.xpEarned")} value={`+${nf.format(total)}`} />
+        <Stat icon={<Flame size={16} />} label={t("lesson.complete.streak")} value={t("common.days", { count: r.streak.current })} />
+        <Stat
+          icon={<Trophy size={16} />}
+          label={skillLabel}
+          value={r.skill ? `${nf.format(r.skill.score)}${r.skill.delta ? ` (+${nf.format(r.skill.delta)})` : ""}` : "—"}
+        />
       </dl>
 
       {(r.levelUp || r.achievements.length > 0 || result.journeyCompleted) && (
         <ul className="mt-4 space-y-2 text-left">
-          {r.levelUp && <Banner>Level {r.levelUp.level} — {r.levelUp.name}. You levelled up.</Banner>}
+          {r.levelUp && <Banner>{t("lesson.complete.levelUp", { level: r.levelUp.level, name: t(`common.levels.${r.levelUp.name}`) })}</Banner>}
           {r.achievements.map((a) => (
-            <Banner key={a.key}>Achievement unlocked: {a.title}</Banner>
+            <Banner key={a.key}>{t("lesson.complete.achievement", { title: a.title })}</Banner>
           ))}
-          {result.journeyCompleted && <Banner>Journey complete. Choose your next one from the Journey tab.</Banner>}
+          {result.journeyCompleted && <Banner>{t("lesson.complete.journeyDone")}</Banner>}
         </ul>
       )}
 
       {result.missionAttemptId && !result.alreadyCompleted && (
-        <div className="mt-6 rounded-2xl border border-line p-4 text-left">
-          <p className="text-[13px] font-semibold">Your mission is live.</p>
-          <p className="mt-1 text-[14px] text-ink-2">Check in from Home once you&apos;ve done it — that&apos;s where the real progress happens.</p>
+        <div className="relative mt-6 overflow-hidden rounded-[28px] bg-hero p-5 text-left text-hero-ink shadow-card">
+          <LeafSprig className="absolute -top-2 -right-2 h-20 w-20 text-hero-ink/25" />
+          <span className="grid h-10 w-10 place-items-center rounded-[14px] bg-hero-ink/12" aria-hidden>
+            <Target size={18} strokeWidth={1.8} />
+          </span>
+          <p className="mt-3 font-display text-[20px] leading-tight">{t("lesson.complete.missionLiveTitle")}</p>
+          <p className="mt-1.5 max-w-[90%] text-[14px] leading-relaxed text-hero-ink/80">{t("lesson.complete.missionLiveBody")}</p>
         </div>
       )}
       {result.nextLesson && (
         <p className="mt-6 text-[14px] text-ink-2">
-          Tomorrow: <span className="font-medium text-ink">{result.nextLesson.title}</span>
+          <Rich template={t("lesson.complete.tomorrow")} values={{ title: <span className="font-medium text-ink">{result.nextLesson.title}</span> }} />
         </p>
       )}
     </section>
@@ -476,9 +591,9 @@ function Completion({ result, earnedBefore, lessonTitle }: { result: CompletionR
 
 function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-surface p-3.5 shadow-card">
+    <div className="rounded-[22px] bg-surface p-3.5 shadow-card">
       <dt className="flex items-center gap-1.5 text-[12px] text-muted">
-        {icon}
+        <span className="shrink-0 text-accent">{icon}</span>
         <span className="truncate">{label}</span>
       </dt>
       <dd className="mt-1.5 text-[17px] font-semibold tabular-nums">{value}</dd>
@@ -487,5 +602,5 @@ function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; va
 }
 
 function Banner({ children }: { children: React.ReactNode }) {
-  return <li className="rounded-2xl bg-accent-soft px-4 py-3 text-[14px] font-medium text-accent animate-rise">{children}</li>;
+  return <li className="rounded-[20px] bg-accent-soft px-4 py-3 text-[14px] font-medium text-accent animate-rise">{children}</li>;
 }
